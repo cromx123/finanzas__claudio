@@ -11,3 +11,5 @@ if [ $? -eq 0 ]; then
 else
   echo "Failed to start containers."
 fi
+
+echo "Script completed."
