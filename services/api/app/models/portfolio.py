@@ -45,7 +45,10 @@ class Asset(Base):
     exchange_mic: Mapped[str] = mapped_column(String(10), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     sector: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    type: Mapped[AssetType] = mapped_column(Enum(AssetType, name="asset_type"), nullable=False)
+    type: Mapped[AssetType] = mapped_column(
+        Enum(AssetType, name="asset_type", values_callable=lambda cls: [e.value for e in cls]),
+        nullable=False,
+    )
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     country: Mapped[str] = mapped_column(String(2), nullable=False)
 
@@ -61,7 +64,8 @@ class Transaction(Base):
         ForeignKey("assets.id", ondelete="RESTRICT"), nullable=True
     )
     type: Mapped[TransactionType] = mapped_column(
-        Enum(TransactionType, name="transaction_type"), nullable=False
+        Enum(TransactionType, name="transaction_type", values_callable=lambda cls: [e.value for e in cls]),
+        nullable=False,
     )
     trade_date: Mapped[date] = mapped_column(nullable=False)
     quantity: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)

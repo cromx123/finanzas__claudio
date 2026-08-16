@@ -8,7 +8,6 @@ import { PerformanceChart } from "../../components/charts/PerformanceChart";
 import { AddTransactionModal } from "../../components/panel/AddTransactionModal";
 import { DistributionPanel } from "../../components/panel/DistributionPanel";
 import { EditHoldingModal } from "../../components/panel/EditHoldingModal";
-import { GoalsPanel } from "../../components/panel/GoalsPanel";
 import { HoldingsTable, type HoldingsSortKey } from "../../components/panel/HoldingsTable";
 import { KpiGrid, type KpiCell } from "../../components/panel/KpiGrid";
 import { PortfolioFormModal } from "../../components/panel/PortfolioFormModal";
@@ -19,15 +18,29 @@ import { Select } from "../../components/ui/Input";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { Tag } from "../../components/ui/Tag";
 import { ToggleButton } from "../../components/ui/ToggleButton";
-import { usePortfolios } from "../../context/Portfolios";
-import { buildLedgerSummary, currentQuantity } from "../../lib/calc/ledger";
-import { computeAllocation, makeGoalRow, sortHoldings, valuateHoldings } from "../../lib/calc/portfolio";
+import { usePortfolioUi } from "../../context/Portfolios";
+import type { AllocationRow } from "../../lib/calc/portfolio";
 import { seedFromId } from "../../lib/calc/portfolioSeed";
 import { buildPerformancePoints } from "../../lib/calc/series";
 import { decimalesForCurrency, formatCurrency, formatDecimal, formatPercent } from "../../lib/format";
 import { SP500_SERIE } from "../../lib/mock/portfolios";
 import { generateSeries } from "../../lib/random";
-import type { AllocBy, RangeKey } from "../../lib/types";
+import type { AllocBy, Currency, RangeKey } from "../../lib/types";
+import {
+  useAddTransaction,
+  useCreatePortfolio,
+  useCreateTag,
+  useDeletePortfolio,
+  useDeletePosition,
+  useDeleteTransaction,
+  useDividendCalendar,
+  usePortfolios,
+  usePortfolioSummary,
+  useRenamePortfolio,
+  useSetHoldingTags,
+  useTags,
+  useTransactions,
+} from "../../hooks/useApi";
 
 const RANGE_OPTIONS: { label: string; value: RangeKey }[] = [
   { label: "1A", value: "1A" },
@@ -37,24 +50,28 @@ const RANGE_OPTIONS: { label: string; value: RangeKey }[] = [
 
 const MOCK_CHART_DRIFT = 0.012;
 const MOCK_CHART_VOL = 0.045;
+const CURRENT_YEAR = new Date().getFullYear();
 
 export default function PanelPage() {
-  const {
-    portfolios,
-    activePortfolio,
-    setActivePortfolioId,
-    addPortfolio,
-    updatePortfolio,
-    deletePortfolio,
-    getTransactions,
-    addTransaction,
-    deleteTransaction,
-    getMetas,
-    saveMeta,
-    deletePosition,
-    netoRetencion,
-    toggleNetoRetencion,
-  } = usePortfolios();
+  const { activePortfolioId, setActivePortfolioId, netoRetencion, toggleNetoRetencion } = usePortfolioUi();
+
+  const { data: portfolios, isLoading: loadingPortfolios } = usePortfolios();
+  const portfolioId = portfolios?.find((p) => p.id === activePortfolioId)?.id ?? portfolios?.[0]?.id ?? null;
+  const portfolio = portfolios?.find((p) => p.id === portfolioId) ?? null;
+
+  const { data: summary } = usePortfolioSummary(portfolioId);
+  const { data: transactions } = useTransactions(portfolioId);
+  const { data: allTags } = useTags();
+  const { data: divCalendar } = useDividendCalendar(portfolioId, CURRENT_YEAR);
+
+  const createPortfolio = useCreatePortfolio();
+  const renamePortfolio = useRenamePortfolio();
+  const deletePortfolioMut = useDeletePortfolio();
+  const addTransaction = useAddTransaction(portfolioId ?? "");
+  const deleteTransactionMut = useDeleteTransaction(portfolioId ?? "");
+  const deletePositionMut = useDeletePosition(portfolioId ?? "");
+  const setHoldingTagsMut = useSetHoldingTags(portfolioId ?? "");
+  const createTag = useCreateTag();
 
   const [range, setRange] = useState<RangeKey>("3A");
   const [bench, setBench] = useState(true);
@@ -66,24 +83,71 @@ export default function PanelPage() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showAddPortfolio, setShowAddPortfolio] = useState(false);
   const [showEditPortfolio, setShowEditPortfolio] = useState(false);
-  const [editingTicker, setEditingTicker] = useState<string | null>(null);
-
-  const portfolio = activePortfolio ?? portfolios[0] ?? null;
-  const transactions = useMemo(() => (portfolio ? getTransactions(portfolio.id) : []), [portfolio, getTransactions]);
-  const metas = useMemo(() => (portfolio ? getMetas(portfolio.id) : {}), [portfolio, getMetas]);
-
-  const ledger = useMemo(() => buildLedgerSummary(transactions, metas), [transactions, metas]);
-  const valuation = useMemo(() => valuateHoldings(ledger.holdings), [ledger]);
-  const sortedHoldings = useMemo(() => sortHoldings(valuation.holdings, sortKey, sortDir), [valuation, sortKey, sortDir]);
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
 
   const perfPoints = useMemo(() => {
-    if (!portfolio) return [];
-    const full = generateSeries(seedFromId(portfolio.id), MOCK_CHART_DRIFT, MOCK_CHART_VOL);
+    if (!portfolioId) return [];
+    const full = generateSeries(seedFromId(portfolioId), MOCK_CHART_DRIFT, MOCK_CHART_VOL);
     const fullBench = generateSeries(SP500_SERIE.seed, SP500_SERIE.drift, SP500_SERIE.vol);
     return buildPerformancePoints(full, fullBench, range);
-  }, [portfolio, range]);
+  }, [portfolioId, range]);
 
-  if (portfolios.length === 0) {
+  const sortedHoldings = useMemo(() => {
+    if (!summary) return [];
+    const key = sortKey === "valor" ? "market_value" : sortKey === "yoc" ? "yield_on_cost" : "unrealized_pl";
+    return [...summary.holdings].sort((a, b) => sortDir * (a[key] - b[key]));
+  }, [summary, sortKey, sortDir]);
+
+  const allocRows: AllocationRow[] = useMemo(() => {
+    if (!summary || !portfolio) return [];
+    const ccy = portfolio.currency as Currency;
+    const groups = new Map<string, number>();
+    summary.holdings.forEach((h) => {
+      let keys: string[];
+      if (allocBy === "tipo") keys = [h.asset.type];
+      else if (allocBy === "sector") keys = [h.asset.sector ?? "Sin sector"];
+      else if (allocBy === "pais") keys = [h.asset.country];
+      else keys = h.tags.length ? h.tags : ["Sin etiqueta"];
+      keys.forEach((k) => groups.set(k, (groups.get(k) ?? 0) + h.market_value));
+    });
+    return Array.from(groups.entries())
+      .map(([label, value]) => ({
+        label,
+        value,
+        pct: summary.valor_total > 0 ? value / summary.valor_total : 0,
+        valueLabel: formatCurrency(value, ccy, 0),
+        pctLabel: formatPercent(summary.valor_total > 0 ? (value / summary.valor_total) * 100 : 0),
+      }))
+      .sort((a, b) => b.pct - a.pct);
+  }, [summary, portfolio, allocBy]);
+
+  const upcomingRows = useMemo(() => {
+    if (!divCalendar || !portfolio) return [];
+    const ccy = portfolio.currency as Currency;
+    const today = new Date().toISOString().slice(0, 10);
+    return divCalendar.events
+      .filter((e) => e.ex_date >= today)
+      .slice(0, 4)
+      .map((e) => ({
+        ticker: e.yahoo_symbol,
+        fecha: e.ex_date,
+        estado: e.estado === "Pagado" ? ("Confirmado" as const) : ("Estimado" as const),
+        montoLabel: formatCurrency(netoRetencion ? e.total_neto : e.total_bruto, ccy),
+      }));
+  }, [divCalendar, portfolio, netoRetencion]);
+
+  if (loadingPortfolios) {
+    return (
+      <>
+        <NavBar />
+        <PageContainer>
+          <p className="text-muted text-sm">Cargando…</p>
+        </PageContainer>
+      </>
+    );
+  }
+
+  if (!portfolios || portfolios.length === 0) {
     return (
       <>
         <NavBar />
@@ -91,7 +155,7 @@ export default function PanelPage() {
           <PageHeader kicker="MÓDULO 1 · PANEL" title="Tus portafolios" />
           <div className="border-y-2 border-divider py-16 flex flex-col items-center gap-3 text-center">
             <p className="text-muted text-sm max-w-[420px]">
-              Todavía no tienes portafolios. Crea el primero — nombre, país y moneda — para empezar a registrar tus compras y ventas.
+              Todavía no tienes portafolios. Crea el primero — nombre y moneda — para empezar a registrar tus compras y ventas.
             </p>
             <Button variant="primary" onClick={() => setShowAddPortfolio(true)}>
               <Plus size={16} strokeWidth={2} />
@@ -102,8 +166,8 @@ export default function PanelPage() {
         {showAddPortfolio && (
           <PortfolioFormModal
             onClose={() => setShowAddPortfolio(false)}
-            onSave={(input) => {
-              addPortfolio(input);
+            onSave={async (input) => {
+              await createPortfolio.mutateAsync(input);
               setShowAddPortfolio(false);
             }}
           />
@@ -112,56 +176,57 @@ export default function PanelPage() {
     );
   }
 
-  if (!portfolio) return null;
+  if (!portfolio || !summary) {
+    return (
+      <>
+        <NavBar />
+        <PageContainer>
+          <p className="text-muted text-sm">Cargando…</p>
+        </PageContainer>
+      </>
+    );
+  }
 
-  const moneda = portfolio.moneda;
+  const moneda = portfolio.currency as Currency;
   const decimalesPrecio = decimalesForCurrency(moneda);
-
-  const wh = netoRetencion ? portfolio.retencion : 0;
-  const dividendoProyectado = valuation.dividendoProyectadoBruto * (1 - wh);
-  const retornoTotal = ledger.aportes > 0 ? (valuation.valorTotal + ledger.gpRealizada - ledger.aportes) / ledger.aportes : 0;
+  const dividendoAnual = netoRetencion ? summary.dividendo_anual_neto : summary.dividendo_anual_bruto;
+  const retornoTotal = summary.aportes > 0 ? (summary.valor_total + summary.gp_realizada - summary.aportes) / summary.aportes : 0;
   const subDivLabel = netoRetencion ? "neto de retención" : "bruto";
 
-  const allocRows = computeAllocation(valuation.holdings, valuation.valorTotal, allocBy, moneda, 0);
-  const goalRows = [
-    makeGoalRow("Dividendo mensual", dividendoProyectado / 12, portfolio.objetivos.dividendoMensual, moneda, decimalesPrecio),
-    makeGoalRow("Cobertura costo de vida", dividendoProyectado / 12, portfolio.objetivos.costoVida, moneda, decimalesPrecio),
-    makeGoalRow("Próximo gran hito · patrimonio", valuation.valorTotal, portfolio.objetivos.hitoPatrimonio, moneda, 0),
-  ];
-
   const kpis: KpiCell[] = [
-    { label: "Valor total de la cartera", value: formatCurrency(valuation.valorTotal, moneda, 0), sub: "a precios marcados" },
+    { label: "Valor total de la cartera", value: formatCurrency(summary.valor_total, moneda, 0), sub: "a precios de mercado" },
     {
       label: "Rentabilidad total",
       value: formatPercent(retornoTotal * 100, true),
       sub: "incluye G/P realizada",
       colorClass: retornoTotal < 0 ? "text-accent-700" : undefined,
     },
-    { label: "Aportes de capital", value: formatCurrency(ledger.aportes, moneda, 0), sub: "capital invertido en compras" },
-    { label: "Compras totales", value: formatCurrency(ledger.comprasTotales, moneda, 0), sub: "acumulado histórico" },
+    { label: "Aportes de capital", value: formatCurrency(summary.aportes, moneda, 0), sub: "capital invertido en compras" },
+    { label: "Compras totales", value: formatCurrency(summary.compras_totales, moneda, 0), sub: "acumulado histórico" },
     { label: "Dividendos cobrados", value: formatCurrency(0, moneda, 0), sub: `histórico, ${subDivLabel}` },
     {
       label: "G/P realizada",
-      value: `${ledger.gpRealizada >= 0 ? "+" : ""}${formatCurrency(ledger.gpRealizada, moneda, 0)}`,
+      value: `${summary.gp_realizada >= 0 ? "+" : ""}${formatCurrency(summary.gp_realizada, moneda, 0)}`,
       sub: "ventas cerradas",
     },
     {
       label: "G/P no realizada",
-      value: `${valuation.gpNoRealizada >= 0 ? "+" : ""}${formatCurrency(valuation.gpNoRealizada, moneda, 0)}`,
+      value: `${summary.gp_no_realizada >= 0 ? "+" : ""}${formatCurrency(summary.gp_no_realizada, moneda, 0)}`,
       sub: "valor − costo de posiciones abiertas",
-      colorClass: valuation.gpNoRealizada < 0 ? "text-accent-700" : undefined,
+      colorClass: summary.gp_no_realizada < 0 ? "text-accent-700" : undefined,
     },
     {
       label: "Yield on Cost",
-      value: valuation.costoTotal > 0 ? formatPercent((valuation.dividendoProyectadoBruto / valuation.costoTotal) * 100) : "—",
+      value: summary.costo_total > 0 ? formatPercent((summary.dividendo_anual_bruto / summary.costo_total) * 100) : "—",
       sub: "dividendo anual ÷ costo, bruto",
     },
-    { label: "Dividendo mensual", value: formatCurrency(dividendoProyectado / 12, moneda, decimalesPrecio), sub: `promedio 12m, ${subDivLabel}` },
-    { label: "Dividendos proyectados", value: formatCurrency(dividendoProyectado, moneda, 0), sub: `próximos 12 meses, ${subDivLabel}` },
+    { label: "Dividendo mensual", value: formatCurrency(dividendoAnual / 12, moneda, decimalesPrecio), sub: `promedio, ${subDivLabel}` },
+    { label: "Dividendos proyectados", value: formatCurrency(dividendoAnual, moneda, 0), sub: `próximos 12 meses, ${subDivLabel}` },
   ];
 
   const hoverPoint = hoverIndex !== null ? perfPoints[hoverIndex] : null;
-  const editingMeta = editingTicker ? metas[editingTicker] : null;
+  const editingHolding = editingAssetId ? summary.holdings.find((h) => h.asset.id === editingAssetId) : null;
+  const hasTransactions = (transactions?.length ?? 0) > 0;
 
   return (
     <>
@@ -175,7 +240,7 @@ export default function PanelPage() {
             >
               {portfolios.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.nombre}
+                  {p.name}
                 </option>
               ))}
             </Select>
@@ -205,15 +270,15 @@ export default function PanelPage() {
       <PageContainer>
         <PageHeader
           kicker="MÓDULO 1 · PANEL"
-          title={portfolio.nombre}
-          aside={transactions.length > 0 ? `${transactions.length} transacciones registradas` : undefined}
+          title={portfolio.name}
+          aside={hasTransactions ? `${transactions!.length} transacciones registradas` : undefined}
         />
 
-        {transactions.length === 0 ? (
+        {!hasTransactions ? (
           <div className="border-y-2 border-divider py-16 flex flex-col items-center gap-3 text-center">
             <p className="text-muted text-sm max-w-[420px]">
-              Todavía no tienes transacciones en esta cartera. Agrega tu primera compra — ticker, fecha, monto invertido y precio por acción — para
-              armar tu cartera.
+              Todavía no tienes transacciones en esta cartera. Agrega tu primera compra — ticker real (ej: CHILE.SN, AAPL, SCHD), fecha, monto
+              invertido y precio por acción — para armar tu cartera.
             </p>
             <Button variant="primary" onClick={() => setShowAddModal(true)}>
               <Plus size={16} strokeWidth={2} />
@@ -246,17 +311,17 @@ export default function PanelPage() {
                 </div>
               </div>
               <PerformanceChart data={perfPoints} benchmarkOn={bench} onHoverIndex={setHoverIndex} />
+              <p className="text-muted text-[11px] mt-1.5">Serie ilustrativa — todavía no ingestamos histórico real de valor de cartera.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-11">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-11">
               <DistributionPanel rows={allocRows} allocBy={allocBy} onChange={setAllocBy} />
-              <GoalsPanel rows={goalRows} />
-              <UpcomingDividends rows={[]} subLabel={subDivLabel} />
+              <UpcomingDividends rows={upcomingRows} subLabel={subDivLabel} />
             </div>
 
             <div className="mt-12">
               <div className="flex items-center gap-3 flex-wrap mb-2.5">
-                <h6 className="m-0 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Posiciones — {valuation.holdings.length} activos</h6>
+                <h6 className="m-0 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Posiciones — {summary.holdings.length} activos</h6>
                 <div className="ml-auto flex gap-2">
                   <Button variant="secondary" onClick={() => setShowHistoryModal(true)} className="text-xs">
                     <History size={14} strokeWidth={1.8} />
@@ -268,15 +333,15 @@ export default function PanelPage() {
                   </Button>
                 </div>
               </div>
-              {valuation.holdings.length === 0 ? (
+              {summary.holdings.length === 0 ? (
                 <p className="text-muted text-sm py-6 border-t border-divider">
                   Vendiste todas tus posiciones — el historial de transacciones sigue disponible.
                 </p>
               ) : (
                 <HoldingsTable
                   holdings={sortedHoldings}
+                  valorTotal={summary.valor_total}
                   ccy={moneda}
-                  decimales={0}
                   decimalesPrecio={decimalesPrecio}
                   sortKey={sortKey}
                   sortDir={sortDir}
@@ -284,56 +349,61 @@ export default function PanelPage() {
                     setSortDir((d) => (sortKey === key ? ((-d) as 1 | -1) : -1));
                     setSortKey(key);
                   }}
-                  onEdit={setEditingTicker}
+                  onEdit={setEditingAssetId}
                 />
               )}
             </div>
           </>
         )}
 
-        <PageFooter moduleLabel="MÓDULO 1 · PANEL" right={<>Datos ingresados manualmente · guardados en este navegador</>} />
+        <PageFooter moduleLabel="MÓDULO 1 · PANEL" right={<>Datos reales · precios y fundamentales desde yfinance</>} />
       </PageContainer>
 
-      {showAddModal && (
+      {showAddModal && portfolioId && (
         <AddTransactionModal
           ccy={moneda}
-          maxVenta={(ticker) => currentQuantity(transactions, ticker)}
+          maxVenta={(symbol) =>
+            summary.holdings.find((h) => h.asset.yahoo_symbol === symbol.toUpperCase())?.quantity ?? 0
+          }
           onClose={() => setShowAddModal(false)}
-          onSubmit={(input) => {
-            addTransaction(portfolio.id, input);
+          onSubmit={async (input) => {
+            await addTransaction.mutateAsync(input);
             setShowAddModal(false);
           }}
         />
       )}
       {showHistoryModal && (
         <TransactionHistoryModal
-          transactions={transactions}
+          transactions={transactions ?? []}
           ccy={moneda}
           decimalesPrecio={decimalesPrecio}
           onClose={() => setShowHistoryModal(false)}
-          onDelete={(id) => deleteTransaction(portfolio.id, id)}
+          onDelete={(id) => deleteTransactionMut.mutate(id)}
         />
       )}
-      {editingMeta && (
+      {editingHolding && (
         <EditHoldingModal
-          meta={editingMeta}
-          ccy={moneda}
-          onClose={() => setEditingTicker(null)}
-          onSave={(meta) => {
-            saveMeta(portfolio.id, meta);
-            setEditingTicker(null);
+          holding={editingHolding}
+          allTags={allTags ?? []}
+          onClose={() => setEditingAssetId(null)}
+          onToggleTag={(tag) => {
+            const current = editingHolding.tags;
+            const next = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
+            setHoldingTagsMut.mutate({ assetId: editingHolding.asset.id, tags: next });
           }}
+          onCreateTag={(label) => createTag.mutate(label)}
           onDeleteAll={() => {
-            deletePosition(portfolio.id, editingMeta.ticker);
-            setEditingTicker(null);
+            deletePositionMut.mutate(editingHolding.asset.id);
+            setEditingAssetId(null);
           }}
         />
       )}
       {showAddPortfolio && (
         <PortfolioFormModal
           onClose={() => setShowAddPortfolio(false)}
-          onSave={(input) => {
-            addPortfolio(input);
+          onSave={async (input) => {
+            const created = await createPortfolio.mutateAsync(input);
+            setActivePortfolioId(created.id);
             setShowAddPortfolio(false);
           }}
         />
@@ -342,12 +412,13 @@ export default function PanelPage() {
         <PortfolioFormModal
           portfolio={portfolio}
           onClose={() => setShowEditPortfolio(false)}
-          onSave={(input) => {
-            updatePortfolio(portfolio.id, input);
+          onSave={async (input) => {
+            await renamePortfolio.mutateAsync({ id: portfolio.id, name: input.name });
             setShowEditPortfolio(false);
           }}
-          onDelete={() => {
-            deletePortfolio(portfolio.id);
+          onDelete={async () => {
+            await deletePortfolioMut.mutateAsync(portfolio.id);
+            setActivePortfolioId(null);
             setShowEditPortfolio(false);
           }}
         />

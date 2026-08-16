@@ -6,9 +6,9 @@ import type { ScreenerFilters } from "../../lib/calc/screener";
 
 const TIPO_OPTIONS: { label: string; value: ScreenerFilters["tipo"] }[] = [
   { label: "Todos", value: "*" },
-  { label: "Acciones", value: "Acción" },
-  { label: "ETF", value: "ETF" },
-  { label: "REIT", value: "REIT" },
+  { label: "Acciones", value: "stock" },
+  { label: "ETF", value: "etf" },
+  { label: "REIT", value: "reit" },
 ];
 const YIELD_OPTIONS: { label: string; value: `${0 | 3 | 5}` }[] = [
   { label: "Todos", value: "0" },

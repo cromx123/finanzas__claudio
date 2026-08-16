@@ -1,42 +1,63 @@
-/**
- * Mock implementation of the future `/v1` REST client (see Architecture
- * Blueprint). Function signatures and return shapes mirror the real
- * endpoints on purpose, so swapping this file for a generated OpenAPI
- * client later doesn't require touching hooks or components.
- */
-import { COMPARADOR_ASSETS } from "../mock/comparadorAssets";
-import { ASIGNACIONES_INICIALES, GOAL_ASSETS, TAGS_INICIALES } from "../mock/goalsTags";
-import { DIVIDEND_CALENDAR } from "../mock/portfolios";
-import { SCREENER_UNIVERSE } from "../mock/screener";
-import type { ComparadorAsset, GoalAsset, ScreenerAsset } from "../types";
+import { api } from "./http";
+import type {
+  ApiAssetDetail,
+  ApiComparadorAsset,
+  ApiDividendCalendar,
+  ApiGoal,
+  ApiGoalsProgress,
+  ApiPortfolio,
+  ApiPortfolioSummary,
+  ApiScreenerAsset,
+  ApiTransaction,
+} from "./types";
 
-// GET /dividends/calendar?portfolio=:id — still a fixed two-portfolio demo
-// dataset, independent of the user's real portfolios (see Panel).
-export async function getDividendCalendar(key: "chile" | "global") {
-  return DIVIDEND_CALENDAR[key];
-}
+// Portfolios
+export const listPortfolios = () => api.get<ApiPortfolio[]>("/v1/portfolios");
+export const createPortfolio = (input: { name: string; currency: string }) =>
+  api.post<ApiPortfolio>("/v1/portfolios", input);
+export const renamePortfolio = (id: string, name: string) => api.patch<ApiPortfolio>(`/v1/portfolios/${id}`, { name });
+export const deletePortfolio = (id: string) => api.delete<void>(`/v1/portfolios/${id}`);
+export const getPortfolioSummary = (id: string) => api.get<ApiPortfolioSummary>(`/v1/portfolios/${id}/summary`);
 
-// GET /screener
-export async function getScreenerUniverse(): Promise<ScreenerAsset[]> {
-  return SCREENER_UNIVERSE;
-}
+// Transactions
+export const listTransactions = (portfolioId: string) =>
+  api.get<ApiTransaction[]>(`/v1/portfolios/${portfolioId}/transactions`);
+export const addTransaction = (
+  portfolioId: string,
+  input: { yahoo_symbol: string; type: "buy" | "sell"; trade_date: string; quantity: number; price: number }
+) => api.post<ApiTransaction>(`/v1/portfolios/${portfolioId}/transactions`, input);
+export const deleteTransaction = (portfolioId: string, transactionId: string) =>
+  api.delete<void>(`/v1/portfolios/${portfolioId}/transactions/${transactionId}`);
 
-// GET /projections/compare — asset reference data (the simulation itself runs on read, params are live UI state)
-export async function getComparadorAssets(): Promise<Record<string, ComparadorAsset>> {
-  return COMPARADOR_ASSETS;
-}
+// Holdings (tags + delete position)
+export const deletePosition = (portfolioId: string, assetId: string) =>
+  api.delete<void>(`/v1/portfolios/${portfolioId}/holdings/${assetId}`);
+export const setHoldingTags = (portfolioId: string, assetId: string, tags: string[]) =>
+  api.put<string[]>(`/v1/portfolios/${portfolioId}/holdings/${assetId}/tags`, { tags });
 
-// GET /goals/progress — underlying asset valuations feeding goals + tag breakdowns
-export async function getGoalAssets(): Promise<GoalAsset[]> {
-  return GOAL_ASSETS;
-}
+// FX rates
+export const getFxRates = () => api.get<Record<string, number>>("/v1/fx-rates");
+export const setFxRate = (currency: string, rate_to_clp: number) =>
+  api.put<Record<string, number>>("/v1/fx-rates", { currency, rate_to_clp });
 
-// GET /tags
-export async function getTags(): Promise<string[]> {
-  return TAGS_INICIALES;
-}
+// Tags
+export const listTags = () => api.get<string[]>("/v1/tags");
+export const createTag = (label: string) => api.post<string[]>("/v1/tags", { label });
 
-// GET /me/tag-assignments (placeholder until goals/tags module exists)
-export async function getTagAssignments(): Promise<Record<string, string[]>> {
-  return ASIGNACIONES_INICIALES;
-}
+// Goals
+export const listGoals = () => api.get<ApiGoal[]>("/v1/goals");
+export const upsertGoals = (
+  goals: { kind: string; target_amount: number; currency: string; monthly_expenses?: number | null }[]
+) => api.put<ApiGoal[]>("/v1/goals", goals);
+export const getGoalsProgress = (currency: string) => api.get<ApiGoalsProgress>(`/v1/goals/progress?currency=${currency}`);
+
+// Screener
+export const getScreener = () => api.get<ApiScreenerAsset[]>("/v1/screener");
+export const getAssetDetail = (yahooSymbol: string) => api.get<ApiAssetDetail>(`/v1/assets/${yahooSymbol}`);
+
+// Comparador
+export const getComparadorAssets = () => api.get<ApiComparadorAsset[]>("/v1/comparador/assets");
+
+// Dividends
+export const getDividendCalendar = (portfolioId: string, year: number) =>
+  api.get<ApiDividendCalendar>(`/v1/dividends/calendar?portfolio_id=${portfolioId}&year=${year}`);

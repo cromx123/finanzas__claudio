@@ -1,5 +1,8 @@
 import { formatCompactUsd, formatDecimal, formatPercent } from "../format";
-import type { ComparadorAsset, ComparadorParams } from "../types";
+import type { ApiComparadorAsset } from "../api/types";
+import type { ComparadorParams } from "../types";
+
+const CURRENT_YEAR = new Date().getFullYear();
 
 export interface SimResult {
   cap: number;
@@ -10,10 +13,13 @@ export interface SimResult {
   cubre: number | null;
 }
 
-export function simulate(asset: ComparadorAsset, params: ComparadorParams): SimResult {
-  const rpM = Math.pow(1 + asset.rentabilidadPromedioAnual / 100, 1 / 12) - 1;
+export function simulate(asset: ApiComparadorAsset, params: ComparadorParams): SimResult {
+  const rp = asset.rentabilidad_promedio_anual ?? 8;
+  const y0 = (asset.yield_inicial ?? 0) / 100;
+  const cd = asset.cagr_div_5y ?? 0;
+  const rpM = Math.pow(1 + rp / 100, 1 / 12) - 1;
   let cap = params.inversionInicial;
-  let y = asset.yieldInicial / 100;
+  let y = y0;
   let aportes = params.inversionInicial;
   let divTot = 0;
   const divSerie = [cap * y];
@@ -25,7 +31,7 @@ export function simulate(asset: ComparadorAsset, params: ComparadorParams): SimR
       cap = cap * (1 + rpM) + params.aporteMensual;
       aportes += params.aporteMensual;
     }
-    y = (y * (1 + asset.cagrDiv5A / 100)) / (1 + asset.rentabilidadPromedioAnual / 100);
+    y = (y * (1 + cd / 100)) / (1 + rp / 100);
     divSerie.push(cap * y);
   }
   const divAF = cap * y;
@@ -53,18 +59,20 @@ export interface MetricRow {
   b: string;
 }
 
-export function buildMetricRows(a: ComparadorAsset, b: ComparadorAsset): MetricRow[] {
+export function buildMetricRows(a: ApiComparadorAsset, b: ApiComparadorAsset): MetricRow[] {
   const nn = (v: number | null) => (v === null ? "—" : formatPercent(v));
+  const px = (v: number | null) => (v === null ? "—" : `US$${formatDecimal(v, 2)}`);
+  const aum = (v: number | null) => (v === null ? "—" : `US$${(v / 1e9).toFixed(1).replace(".", ",")}B`);
   return [
-    { label: "Precio actual", a: `US$${formatDecimal(a.precio, 2)}`, b: `US$${formatDecimal(b.precio, 2)}` },
-    { label: "Yield actual", a: formatPercent(a.yieldInicial), b: formatPercent(b.yieldInicial) },
-    { label: "CAGR dividendo 3A", a: formatPercent(a.cagrDiv3A), b: formatPercent(b.cagrDiv3A) },
-    { label: "CAGR dividendo 5A", a: formatPercent(a.cagrDiv5A), b: formatPercent(b.cagrDiv5A) },
-    { label: "Rentab. promedio anual", a: formatPercent(a.rentabilidadPromedioAnual), b: formatPercent(b.rentabilidadPromedioAnual) },
-    { label: "Retorno 3A", a: formatPercent(a.retorno3A, true), b: formatPercent(b.retorno3A, true) },
-    { label: "Retorno 5A", a: formatPercent(a.retorno5A, true), b: formatPercent(b.retorno5A, true) },
-    { label: "Expense ratio", a: nn(a.expenseRatio), b: nn(b.expenseRatio) },
-    { label: "AUM / Cap.", a: `US$${a.aumOCap}`, b: `US$${b.aumOCap}` },
+    { label: "Precio actual", a: px(a.price), b: px(b.price) },
+    { label: "Yield actual", a: nn(a.yield_inicial), b: nn(b.yield_inicial) },
+    { label: "CAGR dividendo 3A", a: nn(a.cagr_div_3y), b: nn(b.cagr_div_3y) },
+    { label: "CAGR dividendo 5A", a: nn(a.cagr_div_5y), b: nn(b.cagr_div_5y) },
+    { label: "Rentab. promedio anual", a: nn(a.rentabilidad_promedio_anual), b: nn(b.rentabilidad_promedio_anual) },
+    { label: "Retorno 3A", a: a.return_3y === null ? "—" : formatPercent(a.return_3y, true), b: b.return_3y === null ? "—" : formatPercent(b.return_3y, true) },
+    { label: "Retorno 5A", a: a.return_5y === null ? "—" : formatPercent(a.return_5y, true), b: b.return_5y === null ? "—" : formatPercent(b.return_5y, true) },
+    { label: "Expense ratio", a: nn(a.expense_ratio), b: nn(b.expense_ratio) },
+    { label: "AUM / Cap.", a: aum(a.aum_or_cap), b: aum(b.aum_or_cap) },
   ];
 }
 
@@ -91,7 +99,9 @@ export function buildResultRow(ticker: string, s: SimResult, colorVar: string, h
     dividendoAnual: formatCompactUsd(s.divAF),
     dividendoMensual: formatCompactUsd(s.divAF / 12),
     yoc: formatPercent((s.divAF / s.aportes) * 100),
-    cubre: s.cubre === null ? `No en ${horizonteAnios} años` : `Sí · año ${s.cubre} (${2026 + s.cubre})`,
+    cubre: s.cubre === null ? `No en ${horizonteAnios} años` : `Sí · año ${s.cubre} (${CURRENT_YEAR + s.cubre})`,
     cubreNegative: s.cubre === null,
   };
 }
+
+export { CURRENT_YEAR };

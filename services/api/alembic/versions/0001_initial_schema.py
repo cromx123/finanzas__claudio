@@ -58,7 +58,6 @@ def upgrade() -> None:
     asset_type = postgresql.ENUM(
         "stock", "etf", "reit", "crypto", "index", name="asset_type"
     )
-    asset_type.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "assets",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -75,7 +74,6 @@ def upgrade() -> None:
     transaction_type = postgresql.ENUM(
         "buy", "sell", "dividend", "contribution", "fee", name="transaction_type"
     )
-    transaction_type.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "transactions",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -133,7 +131,6 @@ def upgrade() -> None:
     goal_kind = postgresql.ENUM(
         "monthly_dividends", "cost_coverage", "net_worth", name="goal_kind"
     )
-    goal_kind.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "goals",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -191,11 +188,9 @@ def upgrade() -> None:
     dividend_status = postgresql.ENUM(
         "declared", "estimated", name="dividend_status", schema="market"
     )
-    dividend_status.create(op.get_bind(), checkfirst=True)
     dividend_frequency = postgresql.ENUM(
         "monthly", "quarterly", "annual", name="dividend_frequency", schema="market"
     )
-    dividend_frequency.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "dividend_events",
         sa.Column("id", sa.Uuid(), primary_key=True),

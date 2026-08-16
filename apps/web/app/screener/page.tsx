@@ -6,15 +6,15 @@ import { PageContainer, PageFooter, PageHeader } from "../../components/layout/P
 import { AssetDetailPanel } from "../../components/screener/AssetDetailPanel";
 import { FilterBar } from "../../components/screener/FilterBar";
 import { ScreenerTable } from "../../components/screener/ScreenerTable";
-import { useScreenerUniverse } from "../../hooks/useApi";
+import { useAssetDetail, useScreener } from "../../hooks/useApi";
 import { filterScreener, sortScreener, type ScreenerFilters, type ScreenerSortKey } from "../../lib/calc/screener";
 
 const DEFAULT_FILTERS: ScreenerFilters = { q: "", tipo: "*", yieldMin: 0, peMax: 0, roeMin: 0 };
 
 export default function ScreenerPage() {
-  const { data: universe } = useScreenerUniverse();
+  const { data: universe } = useScreener();
   const [filters, setFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
-  const [sortKey, setSortKey] = useState<ScreenerSortKey>("yield");
+  const [sortKey, setSortKey] = useState<ScreenerSortKey>("yield_pct");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [selected, setSelected] = useState("SCHD");
 
@@ -22,6 +22,9 @@ export default function ScreenerPage() {
     if (!universe) return [];
     return sortScreener(filterScreener(universe, filters), sortKey, sortDir);
   }, [universe, filters, sortKey, sortDir]);
+
+  const selectedSymbol = universe?.some((a) => a.yahoo_symbol === selected) ? selected : universe?.[0]?.yahoo_symbol ?? null;
+  const { data: detail } = useAssetDetail(selectedSymbol);
 
   if (!universe) {
     return (
@@ -34,14 +37,11 @@ export default function ScreenerPage() {
     );
   }
 
-  const detailAsset = universe.find((a) => a.ticker === selected) ?? universe[0];
-  const detailIndex = universe.indexOf(detailAsset);
-
   return (
     <>
       <NavBar right={<span className="text-muted text-xs">{rows.length} resultados</span>} />
       <PageContainer>
-        <PageHeader kicker="MÓDULO 2 · SCREENER" title="Análisis fundamental" aside="fundamentales EOD · fuente yfinance" />
+        <PageHeader kicker="MÓDULO 2 · SCREENER" title="Análisis fundamental" aside="fundamentales reales · fuente yfinance" />
 
         <FilterBar filters={filters} onChange={setFilters} />
 
@@ -49,7 +49,7 @@ export default function ScreenerPage() {
           <div className="flex-[1.9_1_560px] min-w-0 overflow-x-auto">
             <ScreenerTable
               rows={rows}
-              selected={detailAsset.ticker}
+              selected={selectedSymbol ?? ""}
               onSelect={setSelected}
               sortKey={sortKey}
               sortDir={sortDir}
@@ -59,18 +59,16 @@ export default function ScreenerPage() {
               }}
             />
             <p className="text-muted text-[11.5px] mt-2.5">
-              {rows.length
-                ? "Haz clic en una fila para ver la ficha completa. Datos de ejemplo — la versión final consulta market.fundamentals."
-                : "Sin resultados con estos filtros."}
+              {rows.length ? "Haz clic en una fila para ver la ficha completa." : "Sin resultados con estos filtros."}
             </p>
           </div>
 
           <div className="flex-[1_1_330px] max-w-[460px] min-w-0">
-            <AssetDetailPanel asset={detailAsset} index={detailIndex} />
+            {detail ? <AssetDetailPanel detail={detail} /> : <p className="text-muted text-sm">Cargando ficha…</p>}
           </div>
         </div>
 
-        <PageFooter moduleLabel="MÓDULO 2 · SCREENER" right="Filtros y ficha con datos de ejemplo · siguiente módulo: Comparador y proyecciones" />
+        <PageFooter moduleLabel="MÓDULO 2 · SCREENER" right="siguiente módulo: Comparador y proyecciones" />
       </PageContainer>
     </>
   );

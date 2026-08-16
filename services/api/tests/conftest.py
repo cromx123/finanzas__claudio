@@ -18,10 +18,13 @@ def db_session():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    # `market`-schema tables need a real Postgres schema; only the
-    # public-schema tables exercised by these tests are created here.
-    public_tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
-    Base.metadata.create_all(bind=engine, tables=public_tables)
+    # `market`-schema tables map to a Postgres schema; on SQLite we fake it
+    # by ATTACHing a second in-memory database under that name (StaticPool
+    # keeps a single shared connection alive for the fixture's lifetime, so
+    # the attachment persists across all uses of this engine).
+    with engine.connect() as conn:
+        conn.exec_driver_sql("ATTACH DATABASE ':memory:' AS market")
+    Base.metadata.create_all(bind=engine)
 
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = TestingSessionLocal()

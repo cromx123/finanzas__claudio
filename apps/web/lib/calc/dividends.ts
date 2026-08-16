@@ -1,5 +1,6 @@
 import { formatCurrency, formatNumber, formatPercent } from "../format";
-import type { Currency, DividendPortfolioAsset, DividendStatus } from "../types";
+import type { ApiDividendCalendarEvent } from "../api/types";
+import type { Currency, DividendStatus } from "../types";
 
 const MES = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
 const MESL = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -15,27 +16,19 @@ export interface DividendEvent {
   estado: DividendStatus;
 }
 
-function estadoForMonth(mes: number): DividendStatus {
-  if (mes < 7) return "Pagado";
-  if (mes < 10) return "Confirmado";
-  return "Estimado";
-}
-
-export function buildDividendEvents(activos: DividendPortfolioAsset[], wh: number): DividendEvent[] {
-  const evs: DividendEvent[] = [];
-  activos.forEach((a) => {
-    a.pagos.forEach((p) => {
-      evs.push({
-        ticker: a.ticker,
-        nombre: a.nombre,
-        mes: p.mes,
-        dia: p.dia,
-        montoPorAccion: p.montoPorAccion,
-        cantidad: a.cantidad,
-        total: p.montoPorAccion * a.cantidad * (1 - wh),
-        estado: estadoForMonth(p.mes),
-      });
-    });
+export function mapApiEvents(events: ApiDividendCalendarEvent[], neto: boolean): DividendEvent[] {
+  const evs: DividendEvent[] = events.map((e) => {
+    const [, m, d] = e.ex_date.split("-").map(Number);
+    return {
+      ticker: e.yahoo_symbol,
+      nombre: e.name,
+      mes: m - 1,
+      dia: d,
+      montoPorAccion: e.amount_per_share,
+      cantidad: e.quantity,
+      total: neto ? e.total_neto : e.total_bruto,
+      estado: e.estado,
+    };
   });
   evs.sort((a, b) => a.mes - b.mes || a.dia - b.dia);
   return evs;
@@ -142,12 +135,12 @@ export interface DetailRow {
   estado: DividendStatus;
 }
 
-export function buildDetailRows(events: DividendEvent[], filtro: DividendStatus | "*", ccy: Currency): DetailRow[] {
+export function buildDetailRows(events: DividendEvent[], filtro: DividendStatus | "*", ccy: Currency, year: number): DetailRow[] {
   const filtered = filtro === "*" ? events : events.filter((e) => e.estado === filtro);
   return filtered.map((e) => ({
     ticker: e.ticker,
     nombre: e.nombre,
-    fecha: `${String(e.dia).padStart(2, "0")} ${MES[e.mes]} 26`,
+    fecha: `${String(e.dia).padStart(2, "0")} ${MES[e.mes]} ${String(year).slice(2)}`,
     montoLabel: formatCurrency(e.montoPorAccion, ccy, ccy === "USD" ? 3 : 1),
     cantidadLabel: formatNumber(e.cantidad),
     totalLabel: formatCurrency(e.total, ccy, ccy === "USD" ? 2 : 0),

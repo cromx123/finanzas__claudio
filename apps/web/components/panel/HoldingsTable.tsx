@@ -2,7 +2,7 @@
 
 import { Pencil } from "lucide-react";
 import { formatCurrency, formatNumber, formatPercent } from "../../lib/format";
-import type { ValuedHolding } from "../../lib/calc/portfolio";
+import type { ApiHolding } from "../../lib/api/types";
 import type { Currency } from "../../lib/types";
 import { ProgressBar } from "../ui/ProgressBar";
 import { Tag } from "../ui/Tag";
@@ -10,14 +10,14 @@ import { Tag } from "../ui/Tag";
 export type HoldingsSortKey = "valor" | "yoc" | "gp";
 
 interface HoldingsTableProps {
-  holdings: ValuedHolding[];
+  holdings: ApiHolding[];
+  valorTotal: number;
   ccy: Currency;
-  decimales: number;
   decimalesPrecio: number;
   sortKey: HoldingsSortKey;
   sortDir: 1 | -1;
   onSort: (key: HoldingsSortKey) => void;
-  onEdit?: (ticker: string) => void;
+  onEdit?: (assetId: string) => void;
 }
 
 function SortArrow({ active, dir }: { active: boolean; dir: 1 | -1 }) {
@@ -25,15 +25,15 @@ function SortArrow({ active, dir }: { active: boolean; dir: 1 | -1 }) {
   return <span> {dir < 0 ? "▼" : "▲"}</span>;
 }
 
-export function HoldingsTable({ holdings, ccy, decimales, decimalesPrecio, sortKey, sortDir, onSort, onEdit }: HoldingsTableProps) {
-  const maxPeso = Math.max(...holdings.map((h) => h.peso), 0.0001);
+export function HoldingsTable({ holdings, valorTotal, ccy, decimalesPrecio, sortKey, sortDir, onSort, onEdit }: HoldingsTableProps) {
+  const maxValor = Math.max(...holdings.map((h) => h.market_value), 0.0001);
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
             <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Activo</th>
-            <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Etiqueta</th>
+            <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Etiquetas</th>
             <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Cantidad</th>
             <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Precio</th>
             <th
@@ -63,42 +63,52 @@ export function HoldingsTable({ holdings, ccy, decimales, decimalesPrecio, sortK
         </thead>
         <tbody>
           {holdings.map((h) => (
-            <tr key={h.ticker} className="hover:bg-ink/[0.04]">
+            <tr key={h.asset.id} className="hover:bg-ink/[0.04]">
               <td className="p-2 border-b border-divider">
-                <span className="font-mono font-bold text-[12.5px]">{h.ticker}</span>
-                {h.stale ? (
+                <span className="font-mono font-bold text-[12.5px]">{h.asset.yahoo_symbol}</span>
+                {h.price_is_stale ? (
                   <span className="ml-2 inline-flex items-center text-[9px] px-1.5 py-0.5 border border-accent text-accent">EOD</span>
                 ) : null}
-                <div className="text-muted text-[11.5px]">{h.nombre}</div>
+                <div className="text-muted text-[11.5px]">{h.asset.name}</div>
               </td>
               <td className="p-2 border-b border-divider">
-                <Tag variant="neutral" className="text-[10px]">
-                  {h.tag}
-                </Tag>
+                {h.tags.length === 0 ? (
+                  <Tag variant="neutral" className="text-[10px]">
+                    Sin etiqueta
+                  </Tag>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {h.tags.map((t) => (
+                      <Tag key={t} variant="neutral" className="text-[10px]">
+                        {t}
+                      </Tag>
+                    ))}
+                  </div>
+                )}
               </td>
-              <td className="p-2 border-b border-divider text-right text-[13px]">{formatNumber(h.cantidad)}</td>
-              <td className="p-2 border-b border-divider text-right text-[13px]">{formatCurrency(h.precio, ccy, decimalesPrecio)}</td>
-              <td className="p-2 border-b border-divider text-right font-bold text-[13px]">{formatCurrency(h.valor, ccy, decimales)}</td>
+              <td className="p-2 border-b border-divider text-right text-[13px]">{formatNumber(h.quantity)}</td>
+              <td className="p-2 border-b border-divider text-right text-[13px]">{formatCurrency(h.price, ccy, decimalesPrecio)}</td>
+              <td className="p-2 border-b border-divider text-right font-bold text-[13px]">{formatCurrency(h.market_value, ccy)}</td>
               <td className="p-2 border-b border-divider">
                 <div className="flex items-center gap-2">
-                  <ProgressBar percent={(h.peso / maxPeso) * 100} height={8} className="w-[60px]" />
-                  <span className="text-xs">{formatPercent(h.peso * 100)}</span>
+                  <ProgressBar percent={(h.market_value / maxValor) * 100} height={8} className="w-[60px]" />
+                  <span className="text-xs">{formatPercent(valorTotal > 0 ? (h.market_value / valorTotal) * 100 : 0)}</span>
                 </div>
               </td>
-              <td className="p-2 border-b border-divider text-right text-[13px]">{formatPercent(h.yoc * 100)}</td>
-              <td className={`p-2 border-b border-divider text-right text-[13px] ${h.gp < 0 ? "text-accent-700" : ""}`}>
+              <td className="p-2 border-b border-divider text-right text-[13px]">{formatPercent(h.yield_on_cost * 100)}</td>
+              <td className={`p-2 border-b border-divider text-right text-[13px] ${h.unrealized_pl < 0 ? "text-accent-700" : ""}`}>
                 <b>
-                  {h.gp >= 0 ? "+" : ""}
-                  {formatCurrency(h.gp, ccy, decimales)}
+                  {h.unrealized_pl >= 0 ? "+" : ""}
+                  {formatCurrency(h.unrealized_pl, ccy)}
                 </b>
-                <span className="text-[11px]"> · {formatPercent((h.gp / h.costo) * 100, true)}</span>
+                <span className="text-[11px]"> · {formatPercent(h.cost_basis > 0 ? (h.unrealized_pl / h.cost_basis) * 100 : 0, true)}</span>
               </td>
               {onEdit ? (
                 <td className="p-2 border-b border-divider text-right">
                   <button
                     type="button"
-                    onClick={() => onEdit(h.ticker)}
-                    aria-label={`Editar ficha de ${h.ticker}`}
+                    onClick={() => onEdit(h.asset.id)}
+                    aria-label={`Editar ficha de ${h.asset.yahoo_symbol}`}
                     className="text-ink/50 hover:text-accent cursor-pointer"
                   >
                     <Pencil size={14} strokeWidth={1.8} />

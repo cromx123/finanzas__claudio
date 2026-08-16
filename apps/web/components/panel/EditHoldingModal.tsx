@@ -1,55 +1,102 @@
 "use client";
 
 import { useState } from "react";
-import type { AssetType, Currency, HoldingMeta } from "../../lib/types";
+import { formatCurrency, formatPercent } from "../../lib/format";
+import type { ApiHolding } from "../../lib/api/types";
+import type { Currency } from "../../lib/types";
 import { Button } from "../ui/Button";
-import { Input, Select } from "../ui/Input";
+import { Input } from "../ui/Input";
 import { Modal } from "../ui/Modal";
 
 interface EditHoldingModalProps {
-  meta: HoldingMeta;
-  ccy: Currency;
+  holding: ApiHolding;
+  allTags: string[];
   onClose: () => void;
-  onSave: (meta: HoldingMeta) => void;
+  onToggleTag: (tag: string) => void;
+  onCreateTag: (label: string) => void;
   onDeleteAll: () => void;
 }
 
-const TIPOS: AssetType[] = ["Acción", "ETF", "REIT"];
-
-export function EditHoldingModal({ meta, ccy, onClose, onSave, onDeleteAll }: EditHoldingModalProps) {
-  const [form, setForm] = useState<HoldingMeta>(meta);
+export function EditHoldingModal({ holding, allTags, onClose, onToggleTag, onCreateTag, onDeleteAll }: EditHoldingModalProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [newTag, setNewTag] = useState("");
+  const ccy = holding.asset.currency as Currency;
 
   return (
-    <Modal title={`Editar ficha · ${meta.ticker}`} onClose={onClose}>
-      <Input label="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
-      <Select label="Tipo" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value as AssetType })}>
-        {TIPOS.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </Select>
-      <Input label="Etiqueta" value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} />
-      <Input label="Sector" value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} />
-      <Input label="País" value={form.pais} onChange={(e) => setForm({ ...form, pais: e.target.value })} />
-      <Input
-        label={`Precio actual (${ccy})`}
-        type="number"
-        value={form.precioActual}
-        onChange={(e) => setForm({ ...form, precioActual: parseFloat(e.target.value) || 0 })}
-      />
-      <Input
-        label={`Dividendo anual por acción (${ccy})`}
-        type="number"
-        value={form.dividendoAnualPorAccion}
-        onChange={(e) => setForm({ ...form, dividendoAnualPorAccion: parseFloat(e.target.value) || 0 })}
-      />
+    <Modal title={`Ficha · ${holding.asset.yahoo_symbol}`} onClose={onClose}>
+      <div className="text-sm">
+        <div className="font-bold">{holding.asset.name}</div>
+        <div className="text-muted text-xs">
+          {holding.asset.type} · {holding.asset.sector ?? "Sin sector"} · {holding.asset.country}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <div className="text-muted uppercase tracking-wide text-[10px]">Precio actual</div>
+          <b>{formatCurrency(holding.price, ccy)}</b>
+          {holding.price_is_stale ? <span className="text-accent-700 ml-1">(EOD)</span> : null}
+        </div>
+        <div>
+          <div className="text-muted uppercase tracking-wide text-[10px]">Dividendo anual/acción</div>
+          <b>{formatCurrency(holding.dividend_per_share_ttm, ccy)}</b>
+        </div>
+        <div>
+          <div className="text-muted uppercase tracking-wide text-[10px]">Yield on cost</div>
+          <b>{formatPercent(holding.yield_on_cost * 100)}</b>
+        </div>
+        <div>
+          <div className="text-muted uppercase tracking-wide text-[10px]">Costo promedio</div>
+          <b>{formatCurrency(holding.avg_cost, ccy)}</b>
+        </div>
+      </div>
+      <p className="text-muted text-[11px]">Precio y dividendo vienen de datos reales de mercado — no son editables aquí.</p>
+
+      <div>
+        <div className="text-xs mb-1.5 text-ink/70">Etiquetas</div>
+        <div className="flex flex-wrap gap-1.5">
+          {allTags.map((tag) => {
+            const active = holding.tags.includes(tag);
+            return (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => onToggleTag(tag)}
+                className={`text-[11px] font-bold tracking-wide px-2.5 py-1.5 border cursor-pointer ${
+                  active ? "bg-accent text-bg border-accent" : "bg-transparent text-ink border-divider hover:bg-ink/5"
+                }`}
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-2 mt-2">
+          <Input
+            placeholder="Nueva etiqueta…"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            className="max-w-[200px] min-h-8"
+          />
+          <Button
+            variant="secondary"
+            className="text-xs"
+            onClick={() => {
+              const n = newTag.trim();
+              if (n) {
+                onCreateTag(n);
+                setNewTag("");
+              }
+            }}
+          >
+            + Crear
+          </Button>
+        </div>
+      </div>
 
       <div className="flex justify-between items-center gap-2 mt-1 pt-3 border-t border-divider">
         {confirmDelete ? (
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-accent-700">¿Eliminar todas las transacciones de {meta.ticker}?</span>
+            <span className="text-accent-700">¿Eliminar todas las transacciones de {holding.asset.yahoo_symbol}?</span>
             <button type="button" className="text-accent-700 font-bold underline cursor-pointer" onClick={onDeleteAll}>
               Sí, eliminar
             </button>
@@ -62,14 +109,9 @@ export function EditHoldingModal({ meta, ccy, onClose, onSave, onDeleteAll }: Ed
             Eliminar posición
           </button>
         )}
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={() => onSave(form)}>
-            Guardar
-          </Button>
-        </div>
+        <Button variant="primary" onClick={onClose}>
+          Listo
+        </Button>
       </div>
     </Modal>
   );

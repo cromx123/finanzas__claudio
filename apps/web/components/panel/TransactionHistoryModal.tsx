@@ -2,7 +2,8 @@
 
 import { Trash2 } from "lucide-react";
 import { formatCurrency, formatNumber } from "../../lib/format";
-import type { Currency, Transaction } from "../../lib/types";
+import type { ApiTransaction } from "../../lib/api/types";
+import type { Currency } from "../../lib/types";
 import { Modal } from "../ui/Modal";
 import { Tag } from "../ui/Tag";
 
@@ -13,13 +14,13 @@ export function TransactionHistoryModal({
   onClose,
   onDelete,
 }: {
-  transactions: Transaction[];
+  transactions: ApiTransaction[];
   ccy: Currency;
   decimalesPrecio: number;
   onClose: () => void;
   onDelete: (id: string) => void;
 }) {
-  const sorted = [...transactions].sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const sorted = [...transactions].sort((a, b) => b.trade_date.localeCompare(a.trade_date));
 
   return (
     <Modal title="Historial de transacciones" onClose={onClose} width={560}>
@@ -42,21 +43,21 @@ export function TransactionHistoryModal({
             <tbody>
               {sorted.map((tx) => (
                 <tr key={tx.id}>
-                  <td className="p-1.5 border-b border-divider whitespace-nowrap">{tx.fecha}</td>
-                  <td className="p-1.5 border-b border-divider font-mono font-bold">{tx.ticker}</td>
+                  <td className="p-1.5 border-b border-divider whitespace-nowrap">{tx.trade_date}</td>
+                  <td className="p-1.5 border-b border-divider font-mono font-bold">{tx.asset.yahoo_symbol}</td>
                   <td className="p-1.5 border-b border-divider">
-                    <Tag variant={tx.tipo === "Compra" ? "neutral" : "outline"} className="text-[9.5px] px-1.5">
-                      {tx.tipo}
+                    <Tag variant={tx.type === "buy" ? "neutral" : "outline"} className="text-[9.5px] px-1.5">
+                      {tx.type === "buy" ? "Compra" : "Venta"}
                     </Tag>
                   </td>
-                  <td className="p-1.5 border-b border-divider text-right">{formatNumber(tx.cantidad)}</td>
-                  <td className="p-1.5 border-b border-divider text-right">{formatCurrency(tx.precio, ccy, decimalesPrecio)}</td>
-                  <td className="p-1.5 border-b border-divider text-right font-bold">{formatCurrency(tx.monto, ccy)}</td>
+                  <td className="p-1.5 border-b border-divider text-right">{formatNumber(tx.quantity)}</td>
+                  <td className="p-1.5 border-b border-divider text-right">{formatCurrency(tx.price, ccy, decimalesPrecio)}</td>
+                  <td className="p-1.5 border-b border-divider text-right font-bold">{formatCurrency(tx.gross_amount, ccy)}</td>
                   <td className="p-1.5 border-b border-divider text-right">
                     <button
                       type="button"
                       onClick={() => onDelete(tx.id)}
-                      aria-label={`Eliminar transacción ${tx.ticker}`}
+                      aria-label={`Eliminar transacción ${tx.asset.yahoo_symbol}`}
                       className="text-ink/50 hover:text-accent-700 cursor-pointer"
                     >
                       <Trash2 size={14} strokeWidth={1.8} />

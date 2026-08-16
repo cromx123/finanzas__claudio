@@ -44,7 +44,10 @@ class Goal(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    kind: Mapped[GoalKind] = mapped_column(Enum(GoalKind, name="goal_kind"), nullable=False)
+    kind: Mapped[GoalKind] = mapped_column(
+        Enum(GoalKind, name="goal_kind", values_callable=lambda cls: [e.value for e in cls]),
+        nullable=False,
+    )
     target_amount: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     monthly_expenses: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)

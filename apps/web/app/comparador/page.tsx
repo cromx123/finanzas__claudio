@@ -6,7 +6,7 @@ import { PageContainer, PageFooter, PageHeader } from "../../components/layout/P
 import { ComparadorControls } from "../../components/comparador/ComparadorControls";
 import { ProjectionChart } from "../../components/charts/ProjectionChart";
 import { useComparadorAssets } from "../../hooks/useApi";
-import { buildCostOfLivingSeries, buildMetricRows, buildResultRow, simulate } from "../../lib/calc/comparador";
+import { CURRENT_YEAR, buildCostOfLivingSeries, buildMetricRows, buildResultRow, simulate } from "../../lib/calc/comparador";
 import { formatCompactUsd, formatPercent } from "../../lib/format";
 import type { ComparadorParams } from "../../lib/types";
 
@@ -26,21 +26,24 @@ export default function ComparadorPage() {
   const [params, setParams] = useState<ComparadorParams>(DEFAULT_PARAMS);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
+  const byTicker = useMemo(() => new Map((assets ?? []).map((a) => [a.yahoo_symbol, a])), [assets]);
+  const options = useMemo(() => (assets ?? []).map((a) => ({ value: a.yahoo_symbol, label: `${a.yahoo_symbol} — ${a.name}` })), [assets]);
+
   const derived = useMemo(() => {
-    if (!assets) return null;
-    const a = assets[params.activoA];
-    const b = assets[params.activoB];
+    if (!assets || assets.length === 0) return null;
+    const a = byTicker.get(params.activoA) ?? assets[0];
+    const b = byTicker.get(params.activoB) ?? assets[1] ?? assets[0];
     const simA = simulate(a, params);
     const simB = simulate(b, params);
     const cvSerie = buildCostOfLivingSeries(params);
     const chartData = simA.divSerie.map((v, i) => ({
-      year: 2026 + i,
+      year: CURRENT_YEAR + i,
       a: v,
       b: simB.divSerie[i],
       costoVida: cvSerie[i],
     }));
     return { a, b, simA, simB, cvSerie, chartData };
-  }, [assets, params]);
+  }, [assets, byTicker, params]);
 
   if (!derived) {
     return (
@@ -56,11 +59,11 @@ export default function ComparadorPage() {
   const { a, b, simA, simB, cvSerie, chartData } = derived;
   const metricRows = buildMetricRows(a, b);
   const resultRows = [
-    buildResultRow(params.activoA, simA, "var(--color-ink)", params.horizonteAnios),
-    buildResultRow(params.activoB, simB, "var(--color-accent)", params.horizonteAnios),
+    buildResultRow(a.yahoo_symbol, simA, "var(--color-ink)", params.horizonteAnios),
+    buildResultRow(b.yahoo_symbol, simB, "var(--color-accent)", params.horizonteAnios),
   ];
   const hoverPoint = hoverIndex !== null ? chartData[hoverIndex] : null;
-  const anioFin = 2026 + params.horizonteAnios;
+  const anioFin = CURRENT_YEAR + params.horizonteAnios;
 
   return (
     <>
@@ -69,10 +72,10 @@ export default function ComparadorPage() {
         <PageHeader
           kicker="MÓDULO 3 · COMPARADOR Y PROYECCIONES"
           title="Compara, proyecta y evalúa a largo plazo"
-          aside="proyección en US$ · activos .SN convertidos por fx"
+          aside="proyección en US$ · datos reales de fundamentales y precio"
         />
 
-        <ComparadorControls params={params} onChange={setParams} />
+        <ComparadorControls params={params} onChange={setParams} options={options} />
 
         <div className="flex flex-wrap gap-9 mt-[30px] items-start">
           <div className="flex-[1_1_340px] min-w-0">
@@ -81,8 +84,8 @@ export default function ComparadorPage() {
               <thead>
                 <tr>
                   <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Métrica</th>
-                  <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">{params.activoA}</th>
-                  <th className="text-right text-[11px] uppercase text-accent-700 p-2 border-b-2 border-divider">{params.activoB}</th>
+                  <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">{a.yahoo_symbol}</th>
+                  <th className="text-right text-[11px] uppercase text-accent-700 p-2 border-b-2 border-divider">{b.yahoo_symbol}</th>
                 </tr>
               </thead>
               <tbody>
@@ -102,11 +105,11 @@ export default function ComparadorPage() {
               <h6 className="m-0 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Dividendo anual vs costo de vida</h6>
               <span className="inline-flex items-center gap-1.5 text-[11px]">
                 <span className="inline-block w-[18px] h-[3px] bg-ink" />
-                {params.activoA}
+                {a.yahoo_symbol}
               </span>
               <span className="inline-flex items-center gap-1.5 text-[11px]">
                 <span className="inline-block w-[18px] h-[3px] bg-accent" />
-                {params.activoB}
+                {b.yahoo_symbol}
               </span>
               <span className="inline-flex items-center gap-1.5 text-[11px]">
                 <span className="inline-block w-[18px] border-t-2 border-dashed border-neutral-600" />
@@ -114,7 +117,7 @@ export default function ComparadorPage() {
               </span>
               {hoverPoint ? (
                 <span className="text-muted text-[11px] font-mono ml-auto">
-                  {hoverPoint.year} · {params.activoA} {formatCompactUsd(hoverPoint.a)} · {params.activoB} {formatCompactUsd(hoverPoint.b)}
+                  {hoverPoint.year} · {a.yahoo_symbol} {formatCompactUsd(hoverPoint.a)} · {b.yahoo_symbol} {formatCompactUsd(hoverPoint.b)}
                 </span>
               ) : null}
             </div>

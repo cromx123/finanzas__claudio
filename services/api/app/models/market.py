@@ -71,10 +71,22 @@ class DividendEvent(Base):
     amount_per_share: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     status: Mapped[DividendStatus] = mapped_column(
-        Enum(DividendStatus, name="dividend_status", schema=MARKET_SCHEMA), nullable=False
+        Enum(
+            DividendStatus,
+            name="dividend_status",
+            schema=MARKET_SCHEMA,
+            values_callable=lambda cls: [e.value for e in cls],
+        ),
+        nullable=False,
     )
     frequency: Mapped[DividendFrequency] = mapped_column(
-        Enum(DividendFrequency, name="dividend_frequency", schema=MARKET_SCHEMA), nullable=False
+        Enum(
+            DividendFrequency,
+            name="dividend_frequency",
+            schema=MARKET_SCHEMA,
+            values_callable=lambda cls: [e.value for e in cls],
+        ),
+        nullable=False,
     )
 
 

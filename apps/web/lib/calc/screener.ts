@@ -1,45 +1,47 @@
 import { formatCurrency, formatDecimal, formatPercent } from "../format";
-import { generateSeries } from "../random";
-import type { ScreenerAsset } from "../types";
+import type { ApiScreenerAsset } from "../api/types";
+import type { Currency } from "../types";
 
 export interface ScreenerFilters {
   q: string;
-  tipo: "*" | ScreenerAsset["tipo"];
+  tipo: "*" | "stock" | "etf" | "reit";
   yieldMin: 0 | 3 | 5;
   peMax: 0 | 15 | 25;
   roeMin: 0 | 15 | 25;
 }
 
-export function filterScreener(list: ScreenerAsset[], f: ScreenerFilters): ScreenerAsset[] {
+export function filterScreener(list: ApiScreenerAsset[], f: ScreenerFilters): ApiScreenerAsset[] {
   const q = f.q.toLowerCase();
   return list.filter(
     (a) =>
-      (!q || a.ticker.toLowerCase().includes(q) || a.nombre.toLowerCase().includes(q)) &&
-      (f.tipo === "*" || a.tipo === f.tipo) &&
-      (!f.yieldMin || a.yield >= f.yieldMin) &&
-      (!f.peMax || (a.pe !== null && a.pe <= f.peMax)) &&
+      (!q || a.yahoo_symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)) &&
+      (f.tipo === "*" || a.type === f.tipo) &&
+      (!f.yieldMin || (a.yield_pct ?? 0) >= f.yieldMin) &&
+      (!f.peMax || (a.pe_ratio !== null && a.pe_ratio <= f.peMax)) &&
       (!f.roeMin || (a.roe !== null && a.roe >= f.roeMin))
   );
 }
 
-export type ScreenerSortKey = "yield" | "cagrDiv5A" | "pe" | "roe";
+export type ScreenerSortKey = "yield_pct" | "cagr_div_5y" | "pe_ratio" | "roe";
 
-export function sortScreener(list: ScreenerAsset[], key: ScreenerSortKey, dir: 1 | -1): ScreenerAsset[] {
+export function sortScreener(list: ApiScreenerAsset[], key: ScreenerSortKey, dir: 1 | -1): ApiScreenerAsset[] {
   return [...list].sort((x, y) => {
     const a = x[key];
     const b = y[key];
-    if (a === null) return 1;
-    if (b === null) return -1;
+    if (a === null || a === undefined) return 1;
+    if (b === null || b === undefined) return -1;
     return dir * (a - b);
   });
 }
 
-export function formatAssetPrice(a: ScreenerAsset): string {
-  return formatCurrency(a.precio, a.moneda, a.moneda === "CLP" ? 0 : 2);
+export function formatAssetPrice(a: ApiScreenerAsset): string {
+  if (a.price === null) return "—";
+  return formatCurrency(a.price, a.currency as Currency, a.currency === "CLP" ? 0 : 2);
 }
 
-export function formatAumOrCap(value: number): string {
-  return (value >= 1000 ? (value / 1000).toFixed(2).replace(".", ",") + "T" : value.toFixed(1).replace(".", ",") + "B") + " US$";
+export function formatAumOrCap(value: number | null): string {
+  if (value === null) return "—";
+  return (value >= 1e12 ? (value / 1e12).toFixed(2).replace(".", ",") + "T" : (value / 1e9).toFixed(1).replace(".", ",") + "B") + " US$";
 }
 
 export interface DetailCell {
@@ -47,44 +49,22 @@ export interface DetailCell {
   value: string;
 }
 
-export function buildDetailCells(a: ScreenerAsset): DetailCell[] {
+export function buildDetailCells(a: ApiScreenerAsset): DetailCell[] {
   const nn = (v: number | null) => (v === null ? "—" : formatPercent(v));
   return [
-    { key: "Yield", value: formatPercent(a.yield) },
-    { key: "CAGR div 3A", value: formatPercent(a.cagrDiv3A, true) },
-    { key: "CAGR div 5A", value: formatPercent(a.cagrDiv5A, true) },
-    { key: "P/E", value: a.pe === null ? "—" : formatDecimal(a.pe, 1) },
-    { key: "Payout", value: nn(a.payout) },
+    { key: "Yield", value: nn(a.yield_pct) },
+    { key: "CAGR div 3A", value: a.cagr_div_3y === null ? "—" : formatPercent(a.cagr_div_3y, true) },
+    { key: "CAGR div 5A", value: a.cagr_div_5y === null ? "—" : formatPercent(a.cagr_div_5y, true) },
+    { key: "P/E", value: a.pe_ratio === null ? "—" : formatDecimal(a.pe_ratio, 1) },
+    { key: "Payout", value: nn(a.payout_ratio) },
     { key: "ROE", value: nn(a.roe) },
     { key: "ROA", value: nn(a.roa) },
     { key: "ROIC", value: nn(a.roic) },
-    { key: "M. neta", value: nn(a.margenNeta) },
-    { key: "Expense ratio", value: a.expenseRatio === null ? "—" : formatPercent(a.expenseRatio) },
-    { key: "Beta", value: formatDecimal(a.beta, 2) },
-    { key: a.expenseRatio === null ? "Cap. bursátil" : "AUM", value: formatAumOrCap(a.aumOCap) },
-    { key: "Retorno 1A", value: formatPercent(a.retorno1A, true) },
-    { key: "Retorno 3A", value: formatPercent(a.retorno3A, true) },
-    { key: "Retorno 5A", value: formatPercent(a.retorno5A, true) },
+    { key: "M. neta", value: nn(a.net_margin) },
+    { key: "Expense ratio", value: a.expense_ratio === null ? "—" : formatPercent(a.expense_ratio) },
+    { key: a.type === "etf" ? "AUM" : "Cap. bursátil", value: formatAumOrCap(a.aum_or_cap) },
+    { key: "Retorno 1A", value: a.return_1y === null ? "—" : formatPercent(a.return_1y, true) },
+    { key: "Retorno 3A", value: a.return_3y === null ? "—" : formatPercent(a.return_3y, true) },
+    { key: "Retorno 5A", value: a.return_5y === null ? "—" : formatPercent(a.return_5y, true) },
   ];
-}
-
-export function buildSparkline(a: ScreenerAsset, indexInUniverse: number): number[] {
-  const drift = a.retorno3A / 100 / 36;
-  return generateSeries(indexInUniverse * 13 + 5, drift, 0.055, 37);
-}
-
-export interface DividendBarPoint {
-  year: string;
-  value: number;
-  isLast: boolean;
-}
-
-export function buildDividendHistory(a: ScreenerAsset): DividendBarPoint[] {
-  const dps = (a.yield / 100) * a.precio;
-  const points: DividendBarPoint[] = [];
-  for (let k = 7; k >= 0; k--) {
-    const value = dps / Math.pow(1 + a.cagrDiv5A / 100, k);
-    points.push({ year: String(2026 - k).slice(2), value, isLast: k === 0 });
-  }
-  return points;
 }

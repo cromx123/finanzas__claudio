@@ -1,11 +1,16 @@
 "use client";
 
-import { COMPARADOR_OPTIONS } from "../../lib/mock/comparadorAssets";
 import type { ComparadorParams } from "../../lib/types";
 import { Input, Select } from "../ui/Input";
 import { ToggleButton } from "../ui/ToggleButton";
 
-export function ComparadorControls({ params, onChange }: { params: ComparadorParams; onChange: (p: ComparadorParams) => void }) {
+interface ComparadorControlsProps {
+  params: ComparadorParams;
+  onChange: (p: ComparadorParams) => void;
+  options: { value: string; label: string }[];
+}
+
+export function ComparadorControls({ params, onChange, options }: ComparadorControlsProps) {
   return (
     <div className="flex items-end gap-5 flex-wrap border-y-2 border-divider py-3.5">
       <div className="field min-w-[210px]">
@@ -14,7 +19,7 @@ export function ComparadorControls({ params, onChange }: { params: ComparadorPar
           Activo A
         </label>
         <Select value={params.activoA} onChange={(e) => onChange({ ...params, activoA: e.target.value })}>
-          {COMPARADOR_OPTIONS.map((o) => (
+          {options.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
@@ -27,7 +32,7 @@ export function ComparadorControls({ params, onChange }: { params: ComparadorPar
           Activo B
         </label>
         <Select value={params.activoB} onChange={(e) => onChange({ ...params, activoB: e.target.value })}>
-          {COMPARADOR_OPTIONS.map((o) => (
+          {options.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
@@ -68,7 +73,9 @@ export function ComparadorControls({ params, onChange }: { params: ComparadorPar
         />
       </div>
       <div className="w-[190px]">
-        <label className="block text-xs mb-1 text-ink/70">Horizonte: {params.horizonteAnios} años · 2026–{2026 + params.horizonteAnios}</label>
+        <label className="block text-xs mb-1 text-ink/70">
+          Horizonte: {params.horizonteAnios} años · {new Date().getFullYear()}–{new Date().getFullYear() + params.horizonteAnios}
+        </label>
         <input
           type="range"
           min={5}

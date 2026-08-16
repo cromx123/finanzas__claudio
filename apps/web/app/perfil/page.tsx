@@ -1,16 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
 import { Input } from "../../components/ui/Input";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
-import { usePortfolios } from "../../context/Portfolios";
-import { buildLedgerSummary } from "../../lib/calc/ledger";
-import { valuateHoldings } from "../../lib/calc/portfolio";
+import { useFxRates, useGoalsProgress, useSetFxRate } from "../../hooks/useApi";
 import { formatCurrency, formatPercent } from "../../lib/format";
-import { convertAmount } from "../../lib/mock/fx";
 import type { Currency } from "../../lib/types";
 
 const CURRENCY_OPTIONS: { label: string; value: Currency }[] = [
@@ -20,27 +17,14 @@ const CURRENCY_OPTIONS: { label: string; value: Currency }[] = [
 ];
 
 export default function PerfilPage() {
-  const { portfolios, getTransactions, getMetas, fxRates, setFxRate } = usePortfolios();
   const [displayCcy, setDisplayCcy] = useState<Currency>("CLP");
-
-  const rows = useMemo(
-    () =>
-      portfolios.map((p) => {
-        const ledger = buildLedgerSummary(getTransactions(p.id), getMetas(p.id));
-        const valuation = valuateHoldings(ledger.holdings);
-        const valorNativo = valuation.valorTotal;
-        const valorConvertido = convertAmount(valorNativo, p.moneda, displayCcy, fxRates);
-        return { portfolio: p, valorNativo, valorConvertido, activos: valuation.holdings.length };
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [portfolios, displayCcy, fxRates]
-  );
-
-  const total = rows.reduce((s, r) => s + r.valorConvertido, 0);
+  const { data: progress } = useGoalsProgress(displayCcy);
+  const { data: fxRates } = useFxRates();
+  const setFxRate = useSetFxRate();
 
   return (
     <>
-      <NavBar right={<span className="text-muted text-xs">{portfolios.length} portafolios</span>} />
+      <NavBar right={<span className="text-muted text-xs">{progress?.portfolios.length ?? 0} portafolios</span>} />
       <PageContainer>
         <PageHeader kicker="PERFIL" title="Patrimonio combinado" aside="todos tus portafolios, convertidos a una sola moneda" />
 
@@ -51,37 +35,40 @@ export default function PerfilPage() {
           </div>
           <div className="ml-auto text-right">
             <h6 className="m-0 mb-1 text-[11px] uppercase tracking-[0.08em] font-sans font-extrabold text-neutral-600">Patrimonio total</h6>
-            <div className="font-sans font-extrabold text-[28px]">{formatCurrency(total, displayCcy, 0)}</div>
+            <div className="font-sans font-extrabold text-[28px]">{formatCurrency(progress?.patrimonio_total ?? 0, displayCcy, 0)}</div>
           </div>
         </div>
 
-        {portfolios.length === 0 ? (
+        {!progress || progress.portfolios.length === 0 ? (
           <p className="text-muted text-sm py-6">Todavía no tienes portafolios — créalos desde el Panel.</p>
         ) : (
           <div>
             <h6 className="m-0 mb-3 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Por portafolio</h6>
-            {rows
-              .sort((a, b) => b.valorConvertido - a.valorConvertido)
-              .map((r) => (
-                <div key={r.portfolio.id} className="py-3 border-t border-divider">
+            {[...progress.portfolios]
+              .sort((a, b) => b.valor_convertido - a.valor_convertido)
+              .map((p) => (
+                <div key={p.id} className="py-3 border-t border-divider">
                   <div className="flex items-baseline gap-2.5 text-[13px] mb-1.5">
-                    <b>{r.portfolio.nombre}</b>
-                    <span className="text-muted text-[11px]">
-                      {r.portfolio.pais} · {r.portfolio.moneda} · {r.activos} activos
-                    </span>
+                    <b>{p.name}</b>
+                    <span className="text-muted text-[11px]">{p.currency}</span>
                     <span className="ml-auto">
-                      <span className="text-muted">{formatCurrency(r.valorNativo, r.portfolio.moneda, 0)}</span>
-                      {r.portfolio.moneda !== displayCcy ? (
+                      <span className="text-muted">{formatCurrency(p.valor_nativo, p.currency as Currency, 0)}</span>
+                      {p.currency !== displayCcy ? (
                         <>
                           {" "}
-                          → <b>{formatCurrency(r.valorConvertido, displayCcy, 0)}</b>
+                          → <b>{formatCurrency(p.valor_convertido, displayCcy, 0)}</b>
                         </>
                       ) : null}
                     </span>
                   </div>
                   <div className="flex items-center gap-2.5">
-                    <ProgressBar percent={total > 0 ? (r.valorConvertido / total) * 100 : 0} className="flex-1" />
-                    <span className="text-xs flex-none w-12 text-right">{total > 0 ? formatPercent((r.valorConvertido / total) * 100) : "—"}</span>
+                    <ProgressBar
+                      percent={progress.patrimonio_total > 0 ? (p.valor_convertido / progress.patrimonio_total) * 100 : 0}
+                      className="flex-1"
+                    />
+                    <span className="text-xs flex-none w-12 text-right">
+                      {progress.patrimonio_total > 0 ? formatPercent((p.valor_convertido / progress.patrimonio_total) * 100) : "—"}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -95,15 +82,21 @@ export default function PerfilPage() {
             <Input
               label="1 USD = ? CLP"
               type="number"
-              value={fxRates.USD}
-              onChange={(e) => setFxRate("USD", parseFloat(e.target.value) || 0)}
+              defaultValue={fxRates?.USD}
+              onBlur={(e) => {
+                const v = parseFloat(e.target.value);
+                if (v > 0) setFxRate.mutate({ currency: "USD", rate: v });
+              }}
               className="w-[140px]"
             />
             <Input
               label="1 EUR = ? CLP"
               type="number"
-              value={fxRates.EUR}
-              onChange={(e) => setFxRate("EUR", parseFloat(e.target.value) || 0)}
+              defaultValue={fxRates?.EUR}
+              onBlur={(e) => {
+                const v = parseFloat(e.target.value);
+                if (v > 0) setFxRate.mutate({ currency: "EUR", rate: v });
+              }}
               className="w-[140px]"
             />
           </div>
