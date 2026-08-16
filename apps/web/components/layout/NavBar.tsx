@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/comparador", label: "Comparador" },
   { href: "/dividendos", label: "Dividendos" },
   { href: "/objetivos", label: "Objetivos" },
+  { href: "/perfil", label: "Perfil" },
 ];
 
 export function NavBar({ right }: { right?: React.ReactNode }) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, History } from "lucide-react";
+import { Pencil, Plus, History } from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
@@ -11,27 +11,23 @@ import { EditHoldingModal } from "../../components/panel/EditHoldingModal";
 import { GoalsPanel } from "../../components/panel/GoalsPanel";
 import { HoldingsTable, type HoldingsSortKey } from "../../components/panel/HoldingsTable";
 import { KpiGrid, type KpiCell } from "../../components/panel/KpiGrid";
+import { PortfolioFormModal } from "../../components/panel/PortfolioFormModal";
 import { TransactionHistoryModal } from "../../components/panel/TransactionHistoryModal";
 import { UpcomingDividends } from "../../components/panel/UpcomingDividends";
 import { Button } from "../../components/ui/Button";
+import { Select } from "../../components/ui/Input";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { Tag } from "../../components/ui/Tag";
 import { ToggleButton } from "../../components/ui/ToggleButton";
-import { usePortfolioPreferences } from "../../context/PortfolioPreferences";
-import { usePerformanceInputs, usePortfolio } from "../../hooks/useApi";
-import { buildLedgerSummary, currentQuantity, inferPaisFromTicker, nextId } from "../../lib/calc/ledger";
+import { usePortfolios } from "../../context/Portfolios";
+import { buildLedgerSummary, currentQuantity } from "../../lib/calc/ledger";
 import { computeAllocation, makeGoalRow, sortHoldings, valuateHoldings } from "../../lib/calc/portfolio";
+import { seedFromId } from "../../lib/calc/portfolioSeed";
 import { buildPerformancePoints } from "../../lib/calc/series";
 import { decimalesForCurrency, formatCurrency, formatDecimal, formatPercent } from "../../lib/format";
+import { SP500_SERIE } from "../../lib/mock/portfolios";
 import { generateSeries } from "../../lib/random";
-import { useLocalStorageJSON } from "../../lib/storage";
-import type { AllocBy, Currency, HoldingMeta, RangeKey, Transaction, TransactionType } from "../../lib/types";
-
-const CURRENCY_OPTIONS: { label: string; value: Currency }[] = [
-  { label: "CLP", value: "CLP" },
-  { label: "USD", value: "USD" },
-  { label: "EUR", value: "EUR" },
-];
+import type { AllocBy, RangeKey } from "../../lib/types";
 
 const RANGE_OPTIONS: { label: string; value: RangeKey }[] = [
   { label: "1A", value: "1A" },
@@ -39,17 +35,26 @@ const RANGE_OPTIONS: { label: string; value: RangeKey }[] = [
   { label: "5A", value: "5A" },
 ];
 
-const EMPTY_TRANSACTIONS: Transaction[] = [];
-const EMPTY_METAS: Record<string, HoldingMeta> = {};
+const MOCK_CHART_DRIFT = 0.012;
+const MOCK_CHART_VOL = 0.045;
 
 export default function PanelPage() {
-  const { portfolio, setPortfolio, netoRetencion, toggleNetoRetencion } = usePortfolioPreferences();
-  const { data: port } = usePortfolio(portfolio);
-  const { data: perfInputs } = usePerformanceInputs(portfolio);
-
-  const [transactions, setTransactions] = useLocalStorageJSON<Transaction[]>(`inversiones-3.0:tx:${portfolio}`, EMPTY_TRANSACTIONS);
-  const [metas, setMetas] = useLocalStorageJSON<Record<string, HoldingMeta>>(`inversiones-3.0:meta:${portfolio}`, EMPTY_METAS);
-  const [monedaOverride, setMonedaOverride] = useLocalStorageJSON<Currency | null>(`inversiones-3.0:moneda:${portfolio}`, null);
+  const {
+    portfolios,
+    activePortfolio,
+    setActivePortfolioId,
+    addPortfolio,
+    updatePortfolio,
+    deletePortfolio,
+    getTransactions,
+    addTransaction,
+    deleteTransaction,
+    getMetas,
+    saveMeta,
+    deletePosition,
+    netoRetencion,
+    toggleNetoRetencion,
+  } = usePortfolios();
 
   const [range, setRange] = useState<RangeKey>("3A");
   const [bench, setBench] = useState(true);
@@ -59,100 +64,90 @@ export default function PanelPage() {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showAddPortfolio, setShowAddPortfolio] = useState(false);
+  const [showEditPortfolio, setShowEditPortfolio] = useState(false);
   const [editingTicker, setEditingTicker] = useState<string | null>(null);
+
+  const portfolio = activePortfolio ?? portfolios[0] ?? null;
+  const transactions = portfolio ? getTransactions(portfolio.id) : [];
+  const metas = portfolio ? getMetas(portfolio.id) : {};
 
   const ledger = useMemo(() => buildLedgerSummary(transactions, metas), [transactions, metas]);
   const valuation = useMemo(() => valuateHoldings(ledger.holdings), [ledger]);
   const sortedHoldings = useMemo(() => sortHoldings(valuation.holdings, sortKey, sortDir), [valuation, sortKey, sortDir]);
 
   const perfPoints = useMemo(() => {
-    if (!perfInputs) return [];
-    const full = generateSeries(perfInputs.seed, perfInputs.drift, perfInputs.vol);
-    const fullBench = generateSeries(perfInputs.benchmark.seed, perfInputs.benchmark.drift, perfInputs.benchmark.vol);
+    if (!portfolio) return [];
+    const full = generateSeries(seedFromId(portfolio.id), MOCK_CHART_DRIFT, MOCK_CHART_VOL);
+    const fullBench = generateSeries(SP500_SERIE.seed, SP500_SERIE.drift, SP500_SERIE.vol);
     return buildPerformancePoints(full, fullBench, range);
-  }, [perfInputs, range]);
+  }, [portfolio, range]);
 
-  if (!port) {
+  if (portfolios.length === 0) {
     return (
       <>
         <NavBar />
         <PageContainer>
-          <p className="text-muted text-sm">Cargando…</p>
+          <PageHeader kicker="MÓDULO 1 · PANEL" title="Tus portafolios" />
+          <div className="border-y-2 border-divider py-16 flex flex-col items-center gap-3 text-center">
+            <p className="text-muted text-sm max-w-[420px]">
+              Todavía no tienes portafolios. Crea el primero — nombre, país y moneda — para empezar a registrar tus compras y ventas.
+            </p>
+            <Button variant="primary" onClick={() => setShowAddPortfolio(true)}>
+              <Plus size={16} strokeWidth={2} />
+              Nuevo portafolio
+            </Button>
+          </div>
         </PageContainer>
+        {showAddPortfolio && (
+          <PortfolioFormModal
+            onClose={() => setShowAddPortfolio(false)}
+            onSave={(input) => {
+              addPortfolio(input);
+              setShowAddPortfolio(false);
+            }}
+          />
+        )}
       </>
     );
   }
 
-  const moneda: Currency = monedaOverride ?? port.moneda;
+  if (!portfolio) return null;
+
+  const moneda = portfolio.moneda;
   const decimalesPrecio = decimalesForCurrency(moneda);
 
-  const handleAddTransaction = (input: { ticker: string; tipo: TransactionType; fecha: string; monto: number; precio: number }) => {
-    const tx: Transaction = { id: nextId(), ...input, cantidad: input.monto / input.precio };
-    setTransactions([...transactions, tx]);
-    if (!metas[input.ticker]) {
-      const meta: HoldingMeta = {
-        ticker: input.ticker,
-        nombre: input.ticker,
-        tipo: "Acción",
-        tag: "Sin etiqueta",
-        sector: "Sin sector",
-        pais: inferPaisFromTicker(input.ticker),
-        precioActual: input.precio,
-        dividendoAnualPorAccion: 0,
-      };
-      setMetas({ ...metas, [input.ticker]: meta });
-    }
-    setShowAddModal(false);
-  };
-
-  const handleDeleteTransaction = (id: string) => {
-    setTransactions(transactions.filter((t) => t.id !== id));
-  };
-
-  const handleSaveMeta = (meta: HoldingMeta) => {
-    setMetas({ ...metas, [meta.ticker]: meta });
-    setEditingTicker(null);
-  };
-
-  const handleDeletePosition = (ticker: string) => {
-    setTransactions(transactions.filter((t) => t.ticker !== ticker));
-    const nextMetas = { ...metas };
-    delete nextMetas[ticker];
-    setMetas(nextMetas);
-    setEditingTicker(null);
-  };
-
-  const wh = netoRetencion ? port.retencion : 0;
+  const wh = netoRetencion ? portfolio.retencion : 0;
   const dividendoProyectado = valuation.dividendoProyectadoBruto * (1 - wh);
   const retornoTotal = ledger.aportes > 0 ? (valuation.valorTotal + ledger.gpRealizada - ledger.aportes) / ledger.aportes : 0;
   const subDivLabel = netoRetencion ? "neto de retención" : "bruto";
 
-  const allocRows = computeAllocation(valuation.holdings, valuation.valorTotal, allocBy, moneda, port.decimales);
+  const allocRows = computeAllocation(valuation.holdings, valuation.valorTotal, allocBy, moneda, 0);
   const goalRows = [
-    makeGoalRow("Dividendo mensual", dividendoProyectado / 12, port.objetivos.dividendoMensual, moneda, decimalesPrecio),
-    makeGoalRow("Cobertura costo de vida", dividendoProyectado / 12, port.objetivos.costoVida, moneda, decimalesPrecio),
-    makeGoalRow("Próximo gran hito · patrimonio", valuation.valorTotal, port.objetivos.hitoPatrimonio, moneda, port.decimales),
+    makeGoalRow("Dividendo mensual", dividendoProyectado / 12, portfolio.objetivos.dividendoMensual, moneda, decimalesPrecio),
+    makeGoalRow("Cobertura costo de vida", dividendoProyectado / 12, portfolio.objetivos.costoVida, moneda, decimalesPrecio),
+    makeGoalRow("Próximo gran hito · patrimonio", valuation.valorTotal, portfolio.objetivos.hitoPatrimonio, moneda, 0),
   ];
 
   const kpis: KpiCell[] = [
-    { label: "Valor total de la cartera", value: formatCurrency(valuation.valorTotal, moneda, port.decimales), sub: "a precios marcados" },
+    { label: "Valor total de la cartera", value: formatCurrency(valuation.valorTotal, moneda, 0), sub: "a precios marcados" },
     {
       label: "Rentabilidad total",
       value: formatPercent(retornoTotal * 100, true),
       sub: "incluye G/P realizada",
       colorClass: retornoTotal < 0 ? "text-accent-700" : undefined,
     },
-    { label: "Aportes de capital", value: formatCurrency(ledger.aportes, moneda, port.decimales), sub: "capital invertido en compras" },
-    { label: "Compras totales", value: formatCurrency(ledger.comprasTotales, moneda, port.decimales), sub: "acumulado histórico" },
-    { label: "Dividendos cobrados", value: formatCurrency(0, moneda, port.decimales), sub: `histórico, ${subDivLabel}` },
+    { label: "Aportes de capital", value: formatCurrency(ledger.aportes, moneda, 0), sub: "capital invertido en compras" },
+    { label: "Compras totales", value: formatCurrency(ledger.comprasTotales, moneda, 0), sub: "acumulado histórico" },
+    { label: "Dividendos cobrados", value: formatCurrency(0, moneda, 0), sub: `histórico, ${subDivLabel}` },
     {
       label: "G/P realizada",
-      value: `${ledger.gpRealizada >= 0 ? "+" : ""}${formatCurrency(ledger.gpRealizada, moneda, port.decimales)}`,
+      value: `${ledger.gpRealizada >= 0 ? "+" : ""}${formatCurrency(ledger.gpRealizada, moneda, 0)}`,
       sub: "ventas cerradas",
     },
     {
       label: "G/P no realizada",
-      value: `${valuation.gpNoRealizada >= 0 ? "+" : ""}${formatCurrency(valuation.gpNoRealizada, moneda, port.decimales)}`,
+      value: `${valuation.gpNoRealizada >= 0 ? "+" : ""}${formatCurrency(valuation.gpNoRealizada, moneda, 0)}`,
       sub: "valor − costo de posiciones abiertas",
       colorClass: valuation.gpNoRealizada < 0 ? "text-accent-700" : undefined,
     },
@@ -162,7 +157,7 @@ export default function PanelPage() {
       sub: "dividendo anual ÷ costo, bruto",
     },
     { label: "Dividendo mensual", value: formatCurrency(dividendoProyectado / 12, moneda, decimalesPrecio), sub: `promedio 12m, ${subDivLabel}` },
-    { label: "Dividendos proyectados", value: formatCurrency(dividendoProyectado, moneda, port.decimales), sub: `próximos 12 meses, ${subDivLabel}` },
+    { label: "Dividendos proyectados", value: formatCurrency(dividendoProyectado, moneda, 0), sub: `próximos 12 meses, ${subDivLabel}` },
   ];
 
   const hoverPoint = hoverIndex !== null ? perfPoints[hoverIndex] : null;
@@ -173,16 +168,34 @@ export default function PanelPage() {
       <NavBar
         right={
           <>
-            <SegmentedControl
-              options={[
-                { label: "Dividendos Chile", value: "chile" as const },
-                { label: "Global Dividendos", value: "global" as const },
-              ]}
-              value={portfolio}
-              onChange={setPortfolio}
-              variant="accent"
-            />
-            <SegmentedControl options={CURRENCY_OPTIONS} value={moneda} onChange={setMonedaOverride} size="compact" />
+            <Select
+              value={portfolio.id}
+              onChange={(e) => setActivePortfolioId(e.target.value)}
+              className="w-auto min-h-0 py-1.5 pr-7 text-xs font-bold"
+            >
+              {portfolios.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nombre}
+                </option>
+              ))}
+            </Select>
+            <button
+              type="button"
+              onClick={() => setShowEditPortfolio(true)}
+              aria-label="Editar portafolio"
+              className="text-ink/50 hover:text-accent cursor-pointer"
+            >
+              <Pencil size={14} strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddPortfolio(true)}
+              aria-label="Nuevo portafolio"
+              className="text-ink/50 hover:text-accent cursor-pointer"
+            >
+              <Plus size={16} strokeWidth={2} />
+            </button>
+            <Tag variant="outline">{moneda}</Tag>
             <ToggleButton active={netoRetencion} onClick={toggleNetoRetencion} variant="accent">
               Neto de retención
             </ToggleButton>
@@ -192,7 +205,7 @@ export default function PanelPage() {
       <PageContainer>
         <PageHeader
           kicker="MÓDULO 1 · PANEL"
-          title={port.nombre}
+          title={portfolio.nombre}
           aside={transactions.length > 0 ? `${transactions.length} transacciones registradas` : undefined}
         />
 
@@ -263,7 +276,7 @@ export default function PanelPage() {
                 <HoldingsTable
                   holdings={sortedHoldings}
                   ccy={moneda}
-                  decimales={port.decimales}
+                  decimales={0}
                   decimalesPrecio={decimalesPrecio}
                   sortKey={sortKey}
                   sortDir={sortDir}
@@ -286,7 +299,10 @@ export default function PanelPage() {
           ccy={moneda}
           maxVenta={(ticker) => currentQuantity(transactions, ticker)}
           onClose={() => setShowAddModal(false)}
-          onSubmit={handleAddTransaction}
+          onSubmit={(input) => {
+            addTransaction(portfolio.id, input);
+            setShowAddModal(false);
+          }}
         />
       )}
       {showHistoryModal && (
@@ -295,7 +311,7 @@ export default function PanelPage() {
           ccy={moneda}
           decimalesPrecio={decimalesPrecio}
           onClose={() => setShowHistoryModal(false)}
-          onDelete={handleDeleteTransaction}
+          onDelete={(id) => deleteTransaction(portfolio.id, id)}
         />
       )}
       {editingMeta && (
@@ -303,8 +319,37 @@ export default function PanelPage() {
           meta={editingMeta}
           ccy={moneda}
           onClose={() => setEditingTicker(null)}
-          onSave={handleSaveMeta}
-          onDeleteAll={() => handleDeletePosition(editingMeta.ticker)}
+          onSave={(meta) => {
+            saveMeta(portfolio.id, meta);
+            setEditingTicker(null);
+          }}
+          onDeleteAll={() => {
+            deletePosition(portfolio.id, editingMeta.ticker);
+            setEditingTicker(null);
+          }}
+        />
+      )}
+      {showAddPortfolio && (
+        <PortfolioFormModal
+          onClose={() => setShowAddPortfolio(false)}
+          onSave={(input) => {
+            addPortfolio(input);
+            setShowAddPortfolio(false);
+          }}
+        />
+      )}
+      {showEditPortfolio && (
+        <PortfolioFormModal
+          portfolio={portfolio}
+          onClose={() => setShowEditPortfolio(false)}
+          onSave={(input) => {
+            updatePortfolio(portfolio.id, input);
+            setShowEditPortfolio(false);
+          }}
+          onDelete={() => {
+            deletePortfolio(portfolio.id);
+            setShowEditPortfolio(false);
+          }}
         />
       )}
     </>
