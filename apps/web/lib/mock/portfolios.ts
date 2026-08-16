@@ -1,31 +1,4 @@
-import type { DividendPortfolioAsset, Portfolio } from "../types";
-
-export const PORTFOLIOS: Record<"chile" | "global", Portfolio> = {
-  chile: {
-    key: "chile",
-    nombre: "Dividendos Chile",
-    moneda: "CLP",
-    decimales: 0,
-    decimalesPrecio: 0,
-    retencion: 0,
-    objetivos: { dividendoMensual: 150_000, costoVida: 1_800_000, hitoPatrimonio: 30_000_000 },
-    seedSerie: 7,
-    driftSerie: 0.011,
-    volSerie: 0.05,
-  },
-  global: {
-    key: "global",
-    nombre: "Global Dividendos",
-    moneda: "USD",
-    decimales: 0,
-    decimalesPrecio: 2,
-    retencion: 0.3,
-    objetivos: { dividendoMensual: 150, costoVida: 2500, hitoPatrimonio: 75_000 },
-    seedSerie: 11,
-    driftSerie: 0.013,
-    volSerie: 0.04,
-  },
-};
+import type { DividendPortfolioAsset } from "../types";
 
 export const SP500_SERIE = { seed: 3, drift: 0.0105, vol: 0.045 };
 

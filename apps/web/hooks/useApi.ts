@@ -5,25 +5,14 @@ import {
   getComparadorAssets,
   getDividendCalendar,
   getGoalAssets,
-  getPerformanceInputs,
-  getPortfolio,
   getScreenerUniverse,
   getTagAssignments,
   getTags,
 } from "../lib/api/client";
-import type { PortfolioKey } from "../lib/types";
 
 const staticQuery = { staleTime: Infinity, gcTime: Infinity } as const;
 
-export function usePortfolio(key: PortfolioKey) {
-  return useQuery({ queryKey: ["portfolio", key], queryFn: () => getPortfolio(key), ...staticQuery });
-}
-
-export function usePerformanceInputs(key: PortfolioKey) {
-  return useQuery({ queryKey: ["performance-inputs", key], queryFn: () => getPerformanceInputs(key), ...staticQuery });
-}
-
-export function useDividendCalendar(key: PortfolioKey) {
+export function useDividendCalendar(key: "chile" | "global") {
   return useQuery({ queryKey: ["dividend-calendar", key], queryFn: () => getDividendCalendar(key), ...staticQuery });
 }
 

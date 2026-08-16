@@ -1,5 +1,5 @@
 export type Currency = "CLP" | "USD" | "EUR";
-export type PortfolioKey = "chile" | "global";
+export type Country = "Chile" | "EE.UU." | "España" | "Otro";
 export type AssetType = "Acción" | "ETF" | "REIT";
 export type DividendStatus = "Pagado" | "Confirmado" | "Estimado";
 export type AllocBy = "tag" | "tipo" | "sector" | "pais";
@@ -33,20 +33,17 @@ export interface PortfolioObjectives {
   hitoPatrimonio: number;
 }
 
-// Static per-portfolio config. Everything money-related (holdings, aportes,
-// G/P realizada, dividendos) is derived at read time from the transaction
-// ledger — see lib/calc/ledger.ts — never stored here.
-export interface Portfolio {
-  key: PortfolioKey;
+// User-created portfolio config, persisted to localStorage. Everything
+// money-related (holdings, aportes, G/P realizada, dividendos) is derived
+// at read time from the transaction ledger — see lib/calc/ledger.ts —
+// never stored here.
+export interface PortfolioConfig {
+  id: string;
   nombre: string;
   moneda: Currency;
-  decimales: number;
-  decimalesPrecio: number;
+  pais: Country;
   retencion: number;
   objetivos: PortfolioObjectives;
-  seedSerie: number;
-  driftSerie: number;
-  volSerie: number;
 }
 
 export type TransactionType = "Compra" | "Venta";

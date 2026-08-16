@@ -6,23 +6,13 @@
  */
 import { COMPARADOR_ASSETS } from "../mock/comparadorAssets";
 import { ASIGNACIONES_INICIALES, GOAL_ASSETS, TAGS_INICIALES } from "../mock/goalsTags";
-import { DIVIDEND_CALENDAR, PORTFOLIOS, SP500_SERIE } from "../mock/portfolios";
+import { DIVIDEND_CALENDAR } from "../mock/portfolios";
 import { SCREENER_UNIVERSE } from "../mock/screener";
-import type { ComparadorAsset, GoalAsset, Portfolio, PortfolioKey, ScreenerAsset } from "../types";
+import type { ComparadorAsset, GoalAsset, ScreenerAsset } from "../types";
 
-// GET /portfolios/:id/summary (+ holdings, inlined — the mock ledger keeps them together)
-export async function getPortfolio(key: PortfolioKey): Promise<Portfolio> {
-  return PORTFOLIOS[key];
-}
-
-// GET /portfolios/:id/performance?benchmark=^GSPC — raw generator params; rebasing happens on read.
-export async function getPerformanceInputs(key: PortfolioKey) {
-  const p = PORTFOLIOS[key];
-  return { seed: p.seedSerie, drift: p.driftSerie, vol: p.volSerie, benchmark: SP500_SERIE };
-}
-
-// GET /dividends/calendar?portfolio=:id
-export async function getDividendCalendar(key: PortfolioKey) {
+// GET /dividends/calendar?portfolio=:id — still a fixed two-portfolio demo
+// dataset, independent of the user's real portfolios (see Panel).
+export async function getDividendCalendar(key: "chile" | "global") {
   return DIVIDEND_CALENDAR[key];
 }
 

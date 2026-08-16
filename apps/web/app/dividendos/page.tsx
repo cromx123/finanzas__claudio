@@ -9,7 +9,7 @@ import { TopPayers } from "../../components/dividendos/TopPayers";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { Tag } from "../../components/ui/Tag";
-import { usePortfolioPreferences } from "../../context/PortfolioPreferences";
+import { usePortfolios } from "../../context/Portfolios";
 import { useDividendCalendar } from "../../hooks/useApi";
 import {
   bestMonthIndex,
@@ -32,7 +32,8 @@ const FILTER_OPTIONS: { label: string; value: DividendStatus | "*" }[] = [
 ];
 
 export default function DividendosPage() {
-  const { portfolio, setPortfolio, netoRetencion, toggleNetoRetencion } = usePortfolioPreferences();
+  const { netoRetencion, toggleNetoRetencion } = usePortfolios();
+  const [portfolio, setPortfolio] = useState<"chile" | "global">("global");
   const { data: calendar } = useDividendCalendar(portfolio);
   const [filtro, setFiltro] = useState<DividendStatus | "*">("*");
 
