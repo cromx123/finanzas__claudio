@@ -33,6 +33,9 @@ export interface PortfolioObjectives {
   hitoPatrimonio: number;
 }
 
+// Static per-portfolio config. Everything money-related (holdings, aportes,
+// G/P realizada, dividendos) is derived at read time from the transaction
+// ledger — see lib/calc/ledger.ts — never stored here.
 export interface Portfolio {
   key: PortfolioKey;
   nombre: string;
@@ -40,16 +43,36 @@ export interface Portfolio {
   decimales: number;
   decimalesPrecio: number;
   retencion: number;
-  aportes: number;
-  dividendosCobrados: number;
-  gpRealizada: number;
-  comprasTotales: number;
   objetivos: PortfolioObjectives;
-  holdings: Holding[];
-  proximosDividendos: UpcomingDividend[];
   seedSerie: number;
   driftSerie: number;
   volSerie: number;
+}
+
+export type TransactionType = "Compra" | "Venta";
+
+export interface Transaction {
+  id: string;
+  ticker: string;
+  tipo: TransactionType;
+  fecha: string; // yyyy-mm-dd
+  monto: number; // total money moved, in the portfolio's currency
+  precio: number; // price per share at the time of the transaction
+  cantidad: number; // monto / precio, derived when the transaction is entered
+}
+
+// User-entered reference data for a ticker (name, classification, mark
+// price, dividend rate) — not part of any single transaction, so it's
+// captured once per ticker and can be edited later.
+export interface HoldingMeta {
+  ticker: string;
+  nombre: string;
+  tipo: AssetType;
+  tag: string;
+  sector: string;
+  pais: string;
+  precioActual: number;
+  dividendoAnualPorAccion: number;
 }
 
 export interface PerformancePoint {

@@ -1,5 +1,6 @@
 "use client";
 
+import { Pencil } from "lucide-react";
 import { formatCurrency, formatNumber, formatPercent } from "../../lib/format";
 import type { ValuedHolding } from "../../lib/calc/portfolio";
 import type { Currency } from "../../lib/types";
@@ -16,6 +17,7 @@ interface HoldingsTableProps {
   sortKey: HoldingsSortKey;
   sortDir: 1 | -1;
   onSort: (key: HoldingsSortKey) => void;
+  onEdit?: (ticker: string) => void;
 }
 
 function SortArrow({ active, dir }: { active: boolean; dir: 1 | -1 }) {
@@ -23,7 +25,7 @@ function SortArrow({ active, dir }: { active: boolean; dir: 1 | -1 }) {
   return <span> {dir < 0 ? "▼" : "▲"}</span>;
 }
 
-export function HoldingsTable({ holdings, ccy, decimales, decimalesPrecio, sortKey, sortDir, onSort }: HoldingsTableProps) {
+export function HoldingsTable({ holdings, ccy, decimales, decimalesPrecio, sortKey, sortDir, onSort, onEdit }: HoldingsTableProps) {
   const maxPeso = Math.max(...holdings.map((h) => h.peso), 0.0001);
   return (
     <div className="overflow-x-auto">
@@ -56,6 +58,7 @@ export function HoldingsTable({ holdings, ccy, decimales, decimalesPrecio, sortK
               G/P no real.
               <SortArrow active={sortKey === "gp"} dir={sortDir} />
             </th>
+            {onEdit ? <th className="p-2 border-b-2 border-divider" /> : null}
           </tr>
         </thead>
         <tbody>
@@ -90,6 +93,18 @@ export function HoldingsTable({ holdings, ccy, decimales, decimalesPrecio, sortK
                 </b>
                 <span className="text-[11px]"> · {formatPercent((h.gp / h.costo) * 100, true)}</span>
               </td>
+              {onEdit ? (
+                <td className="p-2 border-b border-divider text-right">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(h.ticker)}
+                    aria-label={`Editar ficha de ${h.ticker}`}
+                    className="text-ink/50 hover:text-accent cursor-pointer"
+                  >
+                    <Pencil size={14} strokeWidth={1.8} />
+                  </button>
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

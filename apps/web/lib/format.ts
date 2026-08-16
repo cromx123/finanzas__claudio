@@ -14,6 +14,11 @@ export function formatUsd(value: number, decimals = 0): string {
   return formatCurrency(value, "USD", decimals);
 }
 
+/** Conventional per-share/price precision: CLP has no cents, USD/EUR do. */
+export function decimalesForCurrency(ccy: Currency): number {
+  return ccy === "CLP" ? 0 : 2;
+}
+
 export function formatPercent(value: number, withSign = false): string {
   const sign = withSign && value >= 0 ? "+" : "";
   return sign + value.toFixed(1).replace(".", ",") + "%";
