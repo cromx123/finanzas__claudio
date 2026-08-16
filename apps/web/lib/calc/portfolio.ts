@@ -1,5 +1,5 @@
 import { formatCurrency, formatPercent } from "../format";
-import type { AllocBy, Holding, Portfolio, UpcomingDividend } from "../types";
+import type { AllocBy, Currency, Holding, UpcomingDividend } from "../types";
 
 export interface ValuedHolding extends Holding {
   valor: number;
@@ -55,7 +55,7 @@ export function computeAllocation(
   valued: ValuedHolding[],
   valorTotal: number,
   allocBy: AllocBy,
-  ccy: Portfolio["moneda"],
+  ccy: Currency,
   decimales: number
 ): AllocationRow[] {
   const keyOf = (h: ValuedHolding) => (allocBy === "tipo" ? h.tipo : allocBy === "sector" ? h.sector : allocBy === "pais" ? h.pais : h.tag);
@@ -79,7 +79,7 @@ export interface UpcomingDividendRow {
   montoLabel: string;
 }
 
-export function computeUpcomingDividends(divs: UpcomingDividend[], wh: number, ccy: Portfolio["moneda"], decimalesPrecio: number): UpcomingDividendRow[] {
+export function computeUpcomingDividends(divs: UpcomingDividend[], wh: number, ccy: Currency, decimalesPrecio: number): UpcomingDividendRow[] {
   return divs.map((d) => ({
     ticker: d.ticker,
     fecha: d.fecha,
@@ -96,7 +96,7 @@ export interface GoalRow {
   widthPct: number;
 }
 
-export function makeGoalRow(label: string, actual: number, objetivo: number, ccy: Portfolio["moneda"], decimales: number): GoalRow {
+export function makeGoalRow(label: string, actual: number, objetivo: number, ccy: Currency, decimales: number): GoalRow {
   const ratio = Math.min(actual / objetivo, 1);
   return {
     label,

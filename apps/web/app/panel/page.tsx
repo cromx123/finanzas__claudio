@@ -69,8 +69,8 @@ export default function PanelPage() {
   const [editingTicker, setEditingTicker] = useState<string | null>(null);
 
   const portfolio = activePortfolio ?? portfolios[0] ?? null;
-  const transactions = portfolio ? getTransactions(portfolio.id) : [];
-  const metas = portfolio ? getMetas(portfolio.id) : {};
+  const transactions = useMemo(() => (portfolio ? getTransactions(portfolio.id) : []), [portfolio, getTransactions]);
+  const metas = useMemo(() => (portfolio ? getMetas(portfolio.id) : {}), [portfolio, getMetas]);
 
   const ledger = useMemo(() => buildLedgerSummary(transactions, metas), [transactions, metas]);
   const valuation = useMemo(() => valuateHoldings(ledger.holdings), [ledger]);
