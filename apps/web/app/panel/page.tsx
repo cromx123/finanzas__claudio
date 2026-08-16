@@ -15,6 +15,7 @@ import { TransactionHistoryModal } from "../../components/panel/TransactionHisto
 import { UpcomingDividends } from "../../components/panel/UpcomingDividends";
 import { Button } from "../../components/ui/Button";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
+import { Tag } from "../../components/ui/Tag";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { usePortfolioPreferences } from "../../context/PortfolioPreferences";
 import { usePerformanceInputs, usePortfolio } from "../../hooks/useApi";
