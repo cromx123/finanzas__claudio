@@ -6,6 +6,7 @@ import { PageContainer, PageFooter, PageHeader } from "../../components/layout/P
 import { AssetDetailPanel } from "../../components/screener/AssetDetailPanel";
 import { FilterBar } from "../../components/screener/FilterBar";
 import { ScreenerTable } from "../../components/screener/ScreenerTable";
+import { HelpButton } from "../../components/ui/HelpButton";
 import { useAssetDetail, useScreener } from "../../hooks/useApi";
 import { filterScreener, sortScreener, type ScreenerFilters, type ScreenerSortKey } from "../../lib/calc/screener";
 
@@ -41,7 +42,17 @@ export default function ScreenerPage() {
     <>
       <NavBar right={<span className="text-muted text-xs">{rows.length} resultados</span>} />
       <PageContainer>
-        <PageHeader kicker="MÓDULO 2 · SCREENER" title="Análisis fundamental" aside="fundamentales reales · fuente yfinance" />
+        <PageHeader
+          kicker="MÓDULO 2 · SCREENER"
+          title="Análisis fundamental"
+          aside="fundamentales reales · fuente yfinance"
+          help={
+            <HelpButton title="Screener">
+              <p>Explora el universo de activos con datos reales de mercado — filtrá por tipo, yield mínimo, P/E máximo o ROE mínimo.</p>
+              <p>Hacé clic en una fila para ver la ficha completa del activo a la derecha: sparkline de precio e historial de dividendos.</p>
+            </HelpButton>
+          }
+        />
 
         <FilterBar filters={filters} onChange={setFilters} />
 

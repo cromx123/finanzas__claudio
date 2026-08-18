@@ -5,21 +5,16 @@ import { formatCurrency, formatPercent } from "../../lib/format";
 import type { ApiHolding } from "../../lib/api/types";
 import type { Currency } from "../../lib/types";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
 import { Modal } from "../ui/Modal";
 
 interface EditHoldingModalProps {
   holding: ApiHolding;
-  allTags: string[];
   onClose: () => void;
-  onToggleTag: (tag: string) => void;
-  onCreateTag: (label: string) => void;
   onDeleteAll: () => void;
 }
 
-export function EditHoldingModal({ holding, allTags, onClose, onToggleTag, onCreateTag, onDeleteAll }: EditHoldingModalProps) {
+export function EditHoldingModal({ holding, onClose, onDeleteAll }: EditHoldingModalProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [newTag, setNewTag] = useState("");
   const ccy = holding.asset.currency as Currency;
 
   return (
@@ -50,48 +45,6 @@ export function EditHoldingModal({ holding, allTags, onClose, onToggleTag, onCre
         </div>
       </div>
       <p className="text-muted text-[11px]">Precio y dividendo vienen de datos reales de mercado — no son editables aquí.</p>
-
-      <div>
-        <div className="text-xs mb-1.5 text-ink/70">Etiquetas</div>
-        <div className="flex flex-wrap gap-1.5">
-          {allTags.map((tag) => {
-            const active = holding.tags.includes(tag);
-            return (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => onToggleTag(tag)}
-                className={`text-[11px] font-bold tracking-wide px-2.5 py-1.5 border cursor-pointer ${
-                  active ? "bg-accent text-bg border-accent" : "bg-transparent text-ink border-divider hover:bg-ink/5"
-                }`}
-              >
-                {tag}
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex items-center gap-2 mt-2">
-          <Input
-            placeholder="Nueva etiqueta…"
-            value={newTag}
-            onChange={(e) => setNewTag(e.target.value)}
-            className="max-w-[200px] min-h-8"
-          />
-          <Button
-            variant="secondary"
-            className="text-xs"
-            onClick={() => {
-              const n = newTag.trim();
-              if (n) {
-                onCreateTag(n);
-                setNewTag("");
-              }
-            }}
-          >
-            + Crear
-          </Button>
-        </div>
-      </div>
 
       <div className="flex justify-between items-center gap-2 mt-1 pt-3 border-t border-divider">
         {confirmDelete ? (

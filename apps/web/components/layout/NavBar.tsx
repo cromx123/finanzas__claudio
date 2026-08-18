@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/comparador", label: "Comparador" },
   { href: "/dividendos", label: "Dividendos" },
   { href: "/objetivos", label: "Objetivos" },
+  { href: "/movimientos", label: "Movimientos" },
   { href: "/perfil", label: "Perfil" },
 ];
 

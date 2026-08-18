@@ -12,8 +12,9 @@ from app.models.portfolio import Asset, Portfolio, Transaction, TransactionType
 from app.models.strategy import HoldingTag, Tag
 from app.models.user import User, UserTaxRule
 from app.modules.assets.service import get_or_create_asset, latest_price, refresh_quote
+from app.modules.fx import service as fx_service
 from app.modules.ingestion.providers.base import Provider
-from app.schemas.portfolios import HoldingOut, PortfolioSummaryOut
+from app.schemas.portfolios import CountryAllocationOut, CountryAllocationRow, HoldingOut, PortfolioSummaryOut
 
 
 def withholding_for_country(db: Session, user: User, country_code: str) -> float:
@@ -91,6 +92,11 @@ def add_transaction(
     price: float,
 ) -> Transaction:
     asset = get_or_create_asset(db, provider, yahoo_symbol)
+    if asset.currency != portfolio.currency:
+        raise ValueError(
+            f"{asset.yahoo_symbol} cotiza en {asset.currency}, pero este portafolio es {portfolio.currency} "
+            "— no se pueden mezclar monedas en un mismo portafolio"
+        )
     if latest_price(db, asset.id) is None:
         refresh_quote(db, provider, asset)
 
@@ -278,3 +284,22 @@ def compute_summary(db: Session, user: User, portfolio: Portfolio) -> PortfolioS
         dividendo_anual_bruto=dividendo_anual_bruto,
         dividendo_anual_neto=dividendo_anual_neto,
     )
+
+
+def compute_country_allocation(db: Session, user: User, display_currency: str) -> CountryAllocationOut:
+    """Market value of every holding across all of the user's portfolios,
+    grouped by asset country and converted to a single display currency —
+    powers the world map on the perfil page.
+    """
+    rates = fx_service.get_rates(db)
+    totals: dict[str, float] = {}
+
+    for portfolio in list_portfolios(db, user):
+        summary = compute_summary(db, user, portfolio)
+        for holding in summary.holdings:
+            converted = fx_service.convert(holding.market_value, portfolio.currency, display_currency, rates)
+            totals[holding.asset.country] = totals.get(holding.asset.country, 0.0) + converted
+
+    rows = [CountryAllocationRow(country=country, value=value) for country, value in totals.items()]
+    rows.sort(key=lambda r: r.value, reverse=True)
+    return CountryAllocationOut(currency=display_currency, rows=rows)

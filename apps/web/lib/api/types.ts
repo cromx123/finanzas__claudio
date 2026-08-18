@@ -152,3 +152,27 @@ export interface ApiGoalsProgress {
   hitos_fi: { monto: number; logrado: boolean }[];
   numero_fi: number;
 }
+
+export interface ApiCountryAllocation {
+  currency: string;
+  rows: { country: string; value: number }[];
+}
+
+export interface ApiFxRateDetail {
+  rate: number;
+  source: "yahoo" | "manual" | "default" | "base";
+  as_of: string | null;
+}
+
+export interface ApiMovement {
+  date: string;
+  kind: "buy" | "sell" | "dividend";
+  portfolio_id: string;
+  portfolio_name: string;
+  yahoo_symbol: string;
+  asset_name: string;
+  quantity: number;
+  price: number;
+  total: number;
+  currency: string;
+}

@@ -2,9 +2,12 @@ import { api } from "./http";
 import type {
   ApiAssetDetail,
   ApiComparadorAsset,
+  ApiCountryAllocation,
   ApiDividendCalendar,
+  ApiFxRateDetail,
   ApiGoal,
   ApiGoalsProgress,
+  ApiMovement,
   ApiPortfolio,
   ApiPortfolioSummary,
   ApiScreenerAsset,
@@ -18,6 +21,8 @@ export const createPortfolio = (input: { name: string; currency: string }) =>
 export const renamePortfolio = (id: string, name: string) => api.patch<ApiPortfolio>(`/v1/portfolios/${id}`, { name });
 export const deletePortfolio = (id: string) => api.delete<void>(`/v1/portfolios/${id}`);
 export const getPortfolioSummary = (id: string) => api.get<ApiPortfolioSummary>(`/v1/portfolios/${id}/summary`);
+export const getCountryAllocation = (currency: string) =>
+  api.get<ApiCountryAllocation>(`/v1/portfolios/allocation/country?currency=${currency}`);
 
 // Transactions
 export const listTransactions = (portfolioId: string) =>
@@ -37,8 +42,10 @@ export const setHoldingTags = (portfolioId: string, assetId: string, tags: strin
 
 // FX rates
 export const getFxRates = () => api.get<Record<string, number>>("/v1/fx-rates");
+export const getFxRateDetails = () => api.get<Record<string, ApiFxRateDetail>>("/v1/fx-rates/detail");
 export const setFxRate = (currency: string, rate_to_clp: number) =>
   api.put<Record<string, number>>("/v1/fx-rates", { currency, rate_to_clp });
+export const refreshFxRates = () => api.post<Record<string, number>>("/v1/fx-rates/refresh");
 
 // Tags
 export const listTags = () => api.get<string[]>("/v1/tags");
@@ -61,3 +68,6 @@ export const getComparadorAssets = () => api.get<ApiComparadorAsset[]>("/v1/comp
 // Dividends
 export const getDividendCalendar = (portfolioId: string, year: number) =>
   api.get<ApiDividendCalendar>(`/v1/dividends/calendar?portfolio_id=${portfolioId}&year=${year}`);
+
+// Movements
+export const getMovements = () => api.get<ApiMovement[]>("/v1/movements");

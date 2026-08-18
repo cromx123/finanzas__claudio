@@ -67,6 +67,24 @@ def test_create_portfolio_and_add_buy_transaction(client, monkeypatch):
     assert summary["compras_totales"] == 25000 * 98.5
 
 
+def test_buying_asset_in_wrong_currency_is_rejected(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Dividendos Chile", "currency": "CLP"}, headers=_auth(token)
+    ).json()["id"]
+
+    # SCHD has no suffix -> resolves to the US market (USD), but the
+    # portfolio above is CLP-denominated.
+    resp = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-04-01", "quantity": 10, "price": 80.0},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 422
+    assert "USD" in resp.json()["detail"]
+
+
 def test_sell_more_than_owned_is_rejected(client, monkeypatch):
     monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
     token = _register_and_login(client)
@@ -129,6 +147,40 @@ def test_portfolio_scoped_to_owner(client, monkeypatch):
     ).json()["access_token"]
     resp = client.get(f"/v1/portfolios/{portfolio_id}/summary", headers=_auth(token_b))
     assert resp.status_code == 404
+
+
+def test_country_allocation_aggregates_across_portfolios(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+
+    clp_portfolio = client.post(
+        "/v1/portfolios", json={"name": "Chile", "currency": "CLP"}, headers=_auth(token)
+    ).json()["id"]
+    client.post(
+        f"/v1/portfolios/{clp_portfolio}/transactions",
+        json={"yahoo_symbol": "CHILE.SN", "type": "buy", "trade_date": "2026-03-15", "quantity": 10, "price": 100.0},
+        headers=_auth(token),
+    )
+
+    usd_portfolio = client.post(
+        "/v1/portfolios", json={"name": "USA", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    client.post(
+        f"/v1/portfolios/{usd_portfolio}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-04-01", "quantity": 5, "price": 80.0},
+        headers=_auth(token),
+    )
+
+    resp = client.get("/v1/portfolios/allocation/country", headers=_auth(token))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["currency"] == "CLP"
+    by_country = {row["country"]: row["value"] for row in body["rows"]}
+    # CHILE.SN resolves to exchange_mic XSGO -> country "CL" (see
+    # app/modules/assets/service.py); SCHD -> "US". Values are already in
+    # CLP (no cross-currency conversion needed for the CLP portfolio).
+    assert by_country["CL"] == 10 * 100.0
+    assert by_country["US"] > 0
 
 
 def test_tags_crud(client):

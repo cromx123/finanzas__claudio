@@ -7,6 +7,7 @@ import { FiLadder } from "../../components/objetivos/FiLadder";
 import { GoalCards } from "../../components/objetivos/GoalCards";
 import { TagAssignPanel } from "../../components/objetivos/TagAssignPanel";
 import { TagTable } from "../../components/objetivos/TagTable";
+import { HelpButton } from "../../components/ui/HelpButton";
 import { Select } from "../../components/ui/Input";
 import { usePortfolioUi } from "../../context/Portfolios";
 import {
@@ -97,6 +98,15 @@ export default function ObjetivosPage() {
                 <b className="text-ink">{formatUsd(progress.dividendo_mensual, 2)}/mes</b>
               </>
             ) : undefined
+          }
+          help={
+            <HelpButton title="Objetivos">
+              <p>
+                Metas de <b>dividendo mensual</b>, <b>cobertura de gastos</b> (independencia financiera) y los hitos FI de camino a
+                tu número mágico (25× tu gasto anual).
+              </p>
+              <p>Etiquetá tus posiciones por estrategia (ej: “DGI”, “Crecimiento”) para ver el aporte de cada una a tu meta.</p>
+            </HelpButton>
           }
         />
 

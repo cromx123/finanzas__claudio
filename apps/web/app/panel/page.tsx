@@ -14,6 +14,7 @@ import { PortfolioFormModal } from "../../components/panel/PortfolioFormModal";
 import { TransactionHistoryModal } from "../../components/panel/TransactionHistoryModal";
 import { UpcomingDividends } from "../../components/panel/UpcomingDividends";
 import { Button } from "../../components/ui/Button";
+import { HelpButton } from "../../components/ui/HelpButton";
 import { Select } from "../../components/ui/Input";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { Tag } from "../../components/ui/Tag";
@@ -29,7 +30,6 @@ import type { AllocBy, Currency, RangeKey } from "../../lib/types";
 import {
   useAddTransaction,
   useCreatePortfolio,
-  useCreateTag,
   useDeletePortfolio,
   useDeletePosition,
   useDeleteTransaction,
@@ -37,8 +37,6 @@ import {
   usePortfolios,
   usePortfolioSummary,
   useRenamePortfolio,
-  useSetHoldingTags,
-  useTags,
   useTransactions,
 } from "../../hooks/useApi";
 
@@ -52,6 +50,21 @@ const MOCK_CHART_DRIFT = 0.012;
 const MOCK_CHART_VOL = 0.045;
 const CURRENT_YEAR = new Date().getFullYear();
 
+function PanelHelp() {
+  return (
+    <HelpButton title="Panel">
+      <p>
+        Cada portafolio tiene <b>una sola moneda</b> — creá uno por cada moneda en la que inviertas (ej: uno CLP, uno USD) y agregá
+        transacciones de compra/venta con el ticker real (CHILE.SN, AAPL, IBE.MC).
+      </p>
+      <p>
+        Los KPIs, la distribución y las posiciones se recalculan solos con precios reales de mercado. Para ver todo junto, convertido
+        a una sola moneda, andá a <b>Perfil</b>.
+      </p>
+    </HelpButton>
+  );
+}
+
 export default function PanelPage() {
   const { activePortfolioId, setActivePortfolioId, netoRetencion, toggleNetoRetencion } = usePortfolioUi();
 
@@ -61,7 +74,6 @@ export default function PanelPage() {
 
   const { data: summary } = usePortfolioSummary(portfolioId);
   const { data: transactions } = useTransactions(portfolioId);
-  const { data: allTags } = useTags();
   const { data: divCalendar } = useDividendCalendar(portfolioId, CURRENT_YEAR);
 
   const createPortfolio = useCreatePortfolio();
@@ -70,12 +82,10 @@ export default function PanelPage() {
   const addTransaction = useAddTransaction(portfolioId ?? "");
   const deleteTransactionMut = useDeleteTransaction(portfolioId ?? "");
   const deletePositionMut = useDeletePosition(portfolioId ?? "");
-  const setHoldingTagsMut = useSetHoldingTags(portfolioId ?? "");
-  const createTag = useCreateTag();
 
   const [range, setRange] = useState<RangeKey>("3A");
   const [bench, setBench] = useState(true);
-  const [allocBy, setAllocBy] = useState<AllocBy>("tag");
+  const [allocBy, setAllocBy] = useState<AllocBy>("tipo");
   const [sortKey, setSortKey] = useState<HoldingsSortKey>("valor");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -103,19 +113,15 @@ export default function PanelPage() {
     const ccy = portfolio.currency as Currency;
     const groups = new Map<string, number>();
     summary.holdings.forEach((h) => {
-      let keys: string[];
-      if (allocBy === "tipo") keys = [h.asset.type];
-      else if (allocBy === "sector") keys = [h.asset.sector ?? "Sin sector"];
-      else if (allocBy === "pais") keys = [h.asset.country];
-      else keys = h.tags.length ? h.tags : ["Sin etiqueta"];
-      keys.forEach((k) => groups.set(k, (groups.get(k) ?? 0) + h.market_value));
+      const key = allocBy === "tipo" ? h.asset.type : allocBy === "sector" ? (h.asset.sector ?? "Sin sector") : h.asset.country;
+      groups.set(key, (groups.get(key) ?? 0) + h.market_value);
     });
     return Array.from(groups.entries())
       .map(([label, value]) => ({
         label,
         value,
         pct: summary.valor_total > 0 ? value / summary.valor_total : 0,
-        valueLabel: formatCurrency(value, ccy, 0),
+        valueLabel: formatCurrency(value, ccy),
         pctLabel: formatPercent(summary.valor_total > 0 ? (value / summary.valor_total) * 100 : 0),
       }))
       .sort((a, b) => b.pct - a.pct);
@@ -152,7 +158,7 @@ export default function PanelPage() {
       <>
         <NavBar />
         <PageContainer>
-          <PageHeader kicker="MÓDULO 1 · PANEL" title="Tus portafolios" />
+          <PageHeader kicker="MÓDULO 1 · PANEL" title="Tus portafolios" help={<PanelHelp />} />
           <div className="border-y-2 border-divider py-16 flex flex-col items-center gap-3 text-center">
             <p className="text-muted text-sm max-w-[420px]">
               Todavía no tienes portafolios. Crea el primero — nombre y moneda — para empezar a registrar tus compras y ventas.
@@ -188,30 +194,30 @@ export default function PanelPage() {
   }
 
   const moneda = portfolio.currency as Currency;
-  const decimalesPrecio = decimalesForCurrency(moneda);
+  const decimalesPrecio = decimalesForCurrency();
   const dividendoAnual = netoRetencion ? summary.dividendo_anual_neto : summary.dividendo_anual_bruto;
   const retornoTotal = summary.aportes > 0 ? (summary.valor_total + summary.gp_realizada - summary.aportes) / summary.aportes : 0;
   const subDivLabel = netoRetencion ? "neto de retención" : "bruto";
 
   const kpis: KpiCell[] = [
-    { label: "Valor total de la cartera", value: formatCurrency(summary.valor_total, moneda, 0), sub: "a precios de mercado" },
+    { label: "Valor total de la cartera", value: formatCurrency(summary.valor_total, moneda), sub: "a precios de mercado" },
     {
       label: "Rentabilidad total",
       value: formatPercent(retornoTotal * 100, true),
       sub: "incluye G/P realizada",
       colorClass: retornoTotal < 0 ? "text-accent-700" : undefined,
     },
-    { label: "Aportes de capital", value: formatCurrency(summary.aportes, moneda, 0), sub: "capital invertido en compras" },
-    { label: "Compras totales", value: formatCurrency(summary.compras_totales, moneda, 0), sub: "acumulado histórico" },
-    { label: "Dividendos cobrados", value: formatCurrency(0, moneda, 0), sub: `histórico, ${subDivLabel}` },
+    { label: "Aportes de capital", value: formatCurrency(summary.aportes, moneda), sub: "capital invertido en compras" },
+    { label: "Compras totales", value: formatCurrency(summary.compras_totales, moneda), sub: "acumulado histórico" },
+    { label: "Dividendos cobrados", value: formatCurrency(0, moneda), sub: `histórico, ${subDivLabel}` },
     {
       label: "G/P realizada",
-      value: `${summary.gp_realizada >= 0 ? "+" : ""}${formatCurrency(summary.gp_realizada, moneda, 0)}`,
+      value: `${summary.gp_realizada >= 0 ? "+" : ""}${formatCurrency(summary.gp_realizada, moneda)}`,
       sub: "ventas cerradas",
     },
     {
       label: "G/P no realizada",
-      value: `${summary.gp_no_realizada >= 0 ? "+" : ""}${formatCurrency(summary.gp_no_realizada, moneda, 0)}`,
+      value: `${summary.gp_no_realizada >= 0 ? "+" : ""}${formatCurrency(summary.gp_no_realizada, moneda)}`,
       sub: "valor − costo de posiciones abiertas",
       colorClass: summary.gp_no_realizada < 0 ? "text-accent-700" : undefined,
     },
@@ -221,7 +227,7 @@ export default function PanelPage() {
       sub: "dividendo anual ÷ costo, bruto",
     },
     { label: "Dividendo mensual", value: formatCurrency(dividendoAnual / 12, moneda, decimalesPrecio), sub: `promedio, ${subDivLabel}` },
-    { label: "Dividendos proyectados", value: formatCurrency(dividendoAnual, moneda, 0), sub: `próximos 12 meses, ${subDivLabel}` },
+    { label: "Dividendos proyectados", value: formatCurrency(dividendoAnual, moneda), sub: `próximos 12 meses, ${subDivLabel}` },
   ];
 
   const hoverPoint = hoverIndex !== null ? perfPoints[hoverIndex] : null;
@@ -272,6 +278,7 @@ export default function PanelPage() {
           kicker="MÓDULO 1 · PANEL"
           title={portfolio.name}
           aside={hasTransactions ? `${transactions!.length} transacciones registradas` : undefined}
+          help={<PanelHelp />}
         />
 
         {!hasTransactions ? (
@@ -384,14 +391,7 @@ export default function PanelPage() {
       {editingHolding && (
         <EditHoldingModal
           holding={editingHolding}
-          allTags={allTags ?? []}
           onClose={() => setEditingAssetId(null)}
-          onToggleTag={(tag) => {
-            const current = editingHolding.tags;
-            const next = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
-            setHoldingTagsMut.mutate({ assetId: editingHolding.asset.id, tags: next });
-          }}
-          onCreateTag={(label) => createTag.mutate(label)}
           onDeleteAll={() => {
             deletePositionMut.mutate(editingHolding.asset.id);
             setEditingAssetId(null);

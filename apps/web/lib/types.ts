@@ -1,6 +1,6 @@
 export type Currency = "CLP" | "USD" | "EUR";
 export type DividendStatus = "Pagado" | "Confirmado" | "Estimado";
-export type AllocBy = "tag" | "tipo" | "sector" | "pais";
+export type AllocBy = "tipo" | "sector" | "pais";
 export type RangeKey = "1A" | "3A" | "5A";
 
 export interface UpcomingDividend {

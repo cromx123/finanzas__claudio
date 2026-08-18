@@ -33,7 +33,7 @@ export function TagAssignPanel({
       <div className="flex items-baseline gap-2 mb-2.5">
         <b className="text-[13px]">{selected.asset.name}</b>
         <span className="text-muted ml-auto text-[11px]">
-          {formatCurrency(selected.market_value, ccy, 0)} · {formatCurrency(selected.quantity * selected.dividend_per_share_ttm, ccy, 2)}/año
+          {formatCurrency(selected.market_value, ccy)} · {formatCurrency(selected.quantity * selected.dividend_per_share_ttm, ccy, 2)}/año
         </span>
       </div>
       <div className="flex flex-wrap gap-1.5">

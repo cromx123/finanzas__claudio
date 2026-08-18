@@ -8,6 +8,7 @@ from app.core.db import get_db
 from app.models.user import User
 from app.modules.auth.router import get_current_user
 from app.modules.fx import service
+from app.modules.ingestion.providers.yahoo import YahooProvider
 
 router = APIRouter(prefix="/fx-rates", tags=["fx"])
 
@@ -17,9 +18,20 @@ class FxRateIn(BaseModel):
     rate_to_clp: float = Field(gt=0)
 
 
+class FxRateDetail(BaseModel):
+    rate: float
+    source: str
+    as_of: str | None
+
+
 @router.get("", response_model=dict[str, float])
 def get_rates(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, float]:
     return service.get_rates(db)
+
+
+@router.get("/detail", response_model=dict[str, FxRateDetail])
+def get_rate_details(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, FxRateDetail]:
+    return service.get_rate_details(db)
 
 
 @router.put("", response_model=dict[str, float])
@@ -27,3 +39,8 @@ def set_rate(
     payload: FxRateIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> dict[str, float]:
     return service.set_rate(db, payload.currency, payload.rate_to_clp)
+
+
+@router.post("/refresh", response_model=dict[str, float])
+def refresh_rates(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, float]:
+    return service.refresh_rates_from_yahoo(db, YahooProvider())

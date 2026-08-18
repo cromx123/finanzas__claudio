@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.modules.auth.router import get_current_user
 from app.modules.ingestion.providers.yahoo import YahooProvider
 from app.modules.portfolios import service
 from app.schemas.portfolios import (
+    CountryAllocationOut,
     HoldingTagsIn,
     PortfolioIn,
     PortfolioOut,
@@ -44,6 +45,15 @@ def create_portfolio(
     payload: PortfolioIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> PortfolioOut:
     return service.create_portfolio(db, user, payload.name, payload.currency)
+
+
+@router.get("/allocation/country", response_model=CountryAllocationOut)
+def get_country_allocation(
+    currency: str = Query(default="CLP", min_length=3, max_length=3),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CountryAllocationOut:
+    return service.compute_country_allocation(db, user, currency.upper())
 
 
 @router.patch("/{portfolio_id}", response_model=PortfolioOut)

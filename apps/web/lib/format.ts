@@ -1,22 +1,24 @@
 import type { Currency } from "./types";
 
+/** Every displayed amount shows at least 2 decimals, regardless of currency. */
+const MIN_DECIMALS = 2;
+
 export function formatCurrency(value: number, ccy: Currency, decimals?: number): string {
-  const dec = decimals ?? (ccy === "CLP" ? 0 : 2);
+  const dec = Math.max(MIN_DECIMALS, decimals ?? MIN_DECIMALS);
   return new Intl.NumberFormat("es-CL", {
     style: "currency",
     currency: ccy,
     maximumFractionDigits: dec,
-    minimumFractionDigits: 0,
+    minimumFractionDigits: dec,
   }).format(value);
 }
 
-export function formatUsd(value: number, decimals = 0): string {
+export function formatUsd(value: number, decimals = MIN_DECIMALS): string {
   return formatCurrency(value, "USD", decimals);
 }
 
-/** Conventional per-share/price precision: CLP has no cents, USD/EUR do. */
-export function decimalesForCurrency(ccy: Currency): number {
-  return ccy === "CLP" ? 0 : 2;
+export function decimalesForCurrency(): number {
+  return MIN_DECIMALS;
 }
 
 export function formatPercent(value: number, withSign = false): string {

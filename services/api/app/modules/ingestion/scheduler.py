@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.models.portfolio import Asset
+from app.modules.fx import service as fx_service
 from app.modules.ingestion.providers.yahoo import YahooProvider
 from app.modules.ingestion.service import ingest_daily_price
 
@@ -48,6 +49,15 @@ def ingest_nyse_close() -> None:
     _ingest_matching(lambda symbol: not symbol.endswith((".SN", ".MC")))
 
 
+def refresh_fx_rates() -> None:
+    provider = YahooProvider()
+    with SessionLocal() as db:
+        try:
+            fx_service.refresh_rates_from_yahoo(db, provider)
+        except Exception:
+            logger.exception("failed to refresh fx rates")
+
+
 def build_scheduler() -> BackgroundScheduler:
     scheduler = BackgroundScheduler(timezone=settings.ingest_tz)
     scheduler.add_job(
@@ -60,6 +70,12 @@ def build_scheduler() -> BackgroundScheduler:
         ingest_nyse_close,
         CronTrigger(**_parse_cron(settings.ingest_cron_nyse), timezone="America/New_York"),
         id="ingest_nyse_close",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        refresh_fx_rates,
+        CronTrigger(**_parse_cron(settings.ingest_cron_nyse), timezone="America/New_York"),
+        id="refresh_fx_rates",
         replace_existing=True,
     )
     return scheduler
