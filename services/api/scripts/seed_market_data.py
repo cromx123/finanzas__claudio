@@ -117,6 +117,13 @@ def seed_one(db: Session, provider: YahooProvider, symbol: str) -> None:
     asset = get_or_create_asset(db, provider, symbol)
 
     history = provider.get_history(symbol, period="5y")
+    # yfinance a veces repite una fecha dentro del mismo período (tickers poco
+    # líquidos, ajustes de huso horario). Nos quedamos con la última entrada
+    # de cada fecha para no intentar insertar dos veces la misma PK
+    # (asset_id, date) antes del commit — con autoflush=False, db.get() no
+    # ve las filas todavía pendientes en la sesión.
+    deduped: dict = {point.date: point for point in history}
+    history = sorted(deduped.values(), key=lambda p: p.date)
     for point in history:
         row = db.get(Price, {"asset_id": asset.id, "date": point.date})
         if row is None:

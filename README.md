@@ -58,6 +58,31 @@ cd services/api
 python -m app.worker
 ```
 
+## Levantar todo con Docker solamente (sin venv local)
+
+Si no querés instalar Python localmente, `api`, `worker` y `web` también corren
+enteramente dentro de Docker. `migrate` y `seed` son servicios "one-off": no
+tienen puerto expuesto y no arrancan con `docker compose up` (están en el
+profile `tools`), se invocan a mano cuando los necesitás.
+
+```bash
+cd infra
+cp .env.example .env   # y ajusta los secretos
+
+docker compose up -d postgres redis
+docker compose --profile tools run --rm migrate   # aplica las migraciones (alembic upgrade head)
+docker compose up -d api worker web
+
+# una sola vez (o cuando quieras refrescar precios/fundamentals/dividendos):
+docker compose --profile tools run --rm seed
+```
+
+`migrate` y `seed` reusan la misma imagen que `api`/`worker` (mismo
+`Dockerfile`, mismo `requirements.txt`), así que no hay nada adicional que
+instalar — alembic y `scripts/seed_market_data.py` ya están dentro de la
+imagen. Corré `migrate` antes que `seed`: el script de seed asume que el
+schema ya existe.
+
 ### Probar la regla crítica `.SN`
 
 Con el API corriendo y al menos un activo `.SN` insertado en `assets`:
