@@ -14,6 +14,12 @@ router = APIRouter(prefix="/fx-rates", tags=["fx"])
 _provider = YahooProvider()
 
 
+class FxRateDetail(BaseModel):
+    rate: float
+    source: str
+    as_of: str | None
+
+
 @router.get("", response_model=dict[str, float])
 def get_rates(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, float]:
     return service.refresh_rates_from_yahoo(db, _provider)

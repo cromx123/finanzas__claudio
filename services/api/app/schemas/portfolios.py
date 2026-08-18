@@ -80,3 +80,13 @@ class PortfolioSummaryOut(BaseModel):
 
 class HoldingTagsIn(BaseModel):
     tags: list[str]
+
+
+class CountryAllocationRow(BaseModel):
+    country: str
+    value: float
+
+
+class CountryAllocationOut(BaseModel):
+    currency: str
+    rows: list[CountryAllocationRow]

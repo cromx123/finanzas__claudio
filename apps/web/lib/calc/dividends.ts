@@ -59,7 +59,7 @@ export function buildMonthlyBars(monthly: number[], best: number, ccy: Currency)
   return monthly.map((v, i) => ({
     label: MES[i],
     value: v,
-    valueLabel: v ? formatCurrency(v, ccy, 0) : "",
+    valueLabel: v ? formatCurrency(v, ccy) : "",
     best: i === best,
   }));
 }
@@ -83,9 +83,9 @@ export function buildCalendarCells(events: DividendEvent[], monthly: number[], b
     const monthEvents = events.filter((e) => e.mes === i);
     return {
       mes: `${MES[i]} · ${String(i + 1).padStart(2, "0")}`,
-      totalLabel: monthEvents.length ? formatCurrency(monthly[i], ccy, 0) : "—",
+      totalLabel: monthEvents.length ? formatCurrency(monthly[i], ccy) : "—",
       isBest: i === best,
-      eventos: monthEvents.slice(0, 3).map((e) => ({ ticker: e.ticker, total: formatCurrency(e.total, ccy, 0), variant: dotVariant(e.estado) })),
+      eventos: monthEvents.slice(0, 3).map((e) => ({ ticker: e.ticker, total: formatCurrency(e.total, ccy), variant: dotVariant(e.estado) })),
       more: monthEvents.length > 3 ? `+${monthEvents.length - 3} pagos más` : "",
     };
   });
@@ -105,7 +105,7 @@ export function buildTopPayers(events: DividendEvent[], totalY: number, ccy: Cur
   const max = sorted.length ? sorted[0][1] : 1;
   return sorted.map(([ticker, total]) => ({
     ticker,
-    totalLabel: formatCurrency(total, ccy, 0),
+    totalLabel: formatCurrency(total, ccy),
     pctLabel: formatPercent((total / totalY) * 100),
     widthPct: (total / max) * 100,
   }));
@@ -122,7 +122,7 @@ export function buildTopMonths(monthly: number[], ccy: Currency): TopMonthRow[] 
     .map((v, i) => ({ v, i }))
     .sort((a, b) => b.v - a.v)
     .slice(0, 3)
-    .map((x, k) => ({ pos: `0${k + 1}`, mes: MESL[x.i], totalLabel: formatCurrency(x.v, ccy, 0) }));
+    .map((x, k) => ({ pos: `0${k + 1}`, mes: MESL[x.i], totalLabel: formatCurrency(x.v, ccy) }));
 }
 
 export interface DetailRow {

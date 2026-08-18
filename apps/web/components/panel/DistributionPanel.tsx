@@ -6,7 +6,6 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 import { ProgressBar } from "../ui/ProgressBar";
 
 const OPTIONS: { label: string; value: AllocBy }[] = [
-  { label: "Estilo", value: "tag" },
   { label: "Tipo", value: "tipo" },
   { label: "Sector", value: "sector" },
   { label: "País", value: "pais" },

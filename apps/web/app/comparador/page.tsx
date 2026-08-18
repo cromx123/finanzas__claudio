@@ -5,6 +5,7 @@ import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
 import { ComparadorControls } from "../../components/comparador/ComparadorControls";
 import { ProjectionChart } from "../../components/charts/ProjectionChart";
+import { HelpButton } from "../../components/ui/HelpButton";
 import { useComparadorAssets } from "../../hooks/useApi";
 import { CURRENT_YEAR, buildCostOfLivingSeries, buildMetricRows, buildResultRow, simulate } from "../../lib/calc/comparador";
 import { formatCompactUsd, formatPercent } from "../../lib/format";
@@ -73,6 +74,12 @@ export default function ComparadorPage() {
           kicker="MÓDULO 3 · COMPARADOR Y PROYECCIONES"
           title="Compara, proyecta y evalúa a largo plazo"
           aside="proyección en US$ · datos reales de fundamentales y precio"
+          help={
+            <HelpButton title="Comparador">
+              <p>Compará dos activos lado a lado y proyectá a futuro con aportes mensuales, DRIP (reinversión de dividendos) e inflación.</p>
+              <p>Ajustá inversión inicial, aporte mensual, costo de vida y horizonte para ver cómo cambia el resultado a largo plazo.</p>
+            </HelpButton>
+          }
         />
 
         <ComparadorControls params={params} onChange={setParams} options={options} />

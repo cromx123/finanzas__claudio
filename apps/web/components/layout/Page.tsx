@@ -6,10 +6,12 @@ export function PageHeader({
   kicker,
   title,
   aside,
+  help,
 }: {
   kicker: string;
   title: string;
   aside?: React.ReactNode;
+  help?: React.ReactNode;
 }) {
   return (
     <div className="flex items-baseline gap-3.5 flex-wrap mb-5">
@@ -17,7 +19,12 @@ export function PageHeader({
         <div className="text-[10px] tracking-[0.12em] text-accent font-bold mb-1">{kicker}</div>
         <h1 className="text-[28px] sm:text-[34px] m-0 tracking-[-0.015em] font-sans font-extrabold">{title}</h1>
       </div>
-      {aside ? <span className="text-muted text-xs ml-auto">{aside}</span> : null}
+      {aside || help ? (
+        <div className="ml-auto flex items-center gap-2.5">
+          {aside ? <span className="text-muted text-xs">{aside}</span> : null}
+          {help}
+        </div>
+      ) : null}
     </div>
   );
 }

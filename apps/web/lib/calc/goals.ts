@@ -76,7 +76,7 @@ export function buildTagRows(holdings: ApiHolding[], tags: string[], patrimonio:
     return {
       name,
       count: members.length,
-      valorLabel: valor ? formatCurrency(valor, ccy, 0) : "—",
+      valorLabel: valor ? formatCurrency(valor, ccy) : "—",
       pesoLabel: patrimonio > 0 ? formatPercent((valor / patrimonio) * 100) : "—",
       widthPct: patrimonio > 0 ? (valor / patrimonio) * 100 : 0,
       ingresoPctLabel: divAnual > 0 ? formatPercent((div / divAnual) * 100) : "—",

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Currency } from "../../lib/types";
 import { formatNumber } from "../../lib/format";
+import { resolveTickerCurrency } from "../../lib/calc/tickerCurrency";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Modal } from "../ui/Modal";
@@ -30,9 +31,16 @@ export function AddTransactionModal({ ccy, maxVenta, onClose, onSubmit }: AddTra
 
   const cantidad = typeof monto === "number" && typeof precio === "number" && precio > 0 ? monto / precio : 0;
 
+  const tickerCurrency = useMemo(() => resolveTickerCurrency(ticker), [ticker]);
+  const currencyMismatch = tickerCurrency !== null && tickerCurrency !== ccy;
+  const inputCcy = tickerCurrency ?? ccy;
+
   const submit = async () => {
     const t = ticker.trim().toUpperCase();
     if (!t) return setError("Ingresa un ticker.");
+    if (currencyMismatch) {
+      return setError(`${t} cotiza en ${tickerCurrency}, pero este portafolio es ${ccy} — no se pueden mezclar monedas.`);
+    }
     if (!(typeof monto === "number" && monto > 0)) return setError("Ingresa un monto mayor a 0.");
     if (!(typeof precio === "number" && precio > 0)) return setError("Ingresa un precio por acción mayor a 0.");
     if (tipo === "Venta") {
@@ -65,15 +73,20 @@ export function AddTransactionModal({ ccy, maxVenta, onClose, onSubmit }: AddTra
         className="self-start"
       />
       <Input label="Ticker" placeholder="Ej: CHILE.SN" value={ticker} onChange={(e) => setTicker(e.target.value)} />
+      {currencyMismatch ? (
+        <p className="text-accent-700 text-xs">
+          {ticker.trim().toUpperCase()} cotiza en {tickerCurrency}, pero este portafolio es {ccy} — usa un portafolio {tickerCurrency}.
+        </p>
+      ) : null}
       <Input label="Fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
       <Input
-        label={`Monto invertido (${ccy})`}
+        label={`Monto invertido (${inputCcy})`}
         type="number"
         value={monto}
         onChange={(e) => setMonto(e.target.value === "" ? "" : parseFloat(e.target.value))}
       />
       <Input
-        label={`Precio por acción (${ccy})`}
+        label={`Precio por acción (${inputCcy})`}
         type="number"
         value={precio}
         onChange={(e) => setPrecio(e.target.value === "" ? "" : parseFloat(e.target.value))}
@@ -84,7 +97,7 @@ export function AddTransactionModal({ ccy, maxVenta, onClose, onSubmit }: AddTra
         <Button variant="secondary" onClick={onClose} disabled={saving}>
           Cancelar
         </Button>
-        <Button variant="primary" onClick={submit} disabled={saving}>
+        <Button variant="primary" onClick={submit} disabled={saving || currencyMismatch}>
           {saving ? "Guardando…" : "Guardar"}
         </Button>
       </div>

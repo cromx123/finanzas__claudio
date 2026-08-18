@@ -5,7 +5,6 @@ import { formatCurrency, formatNumber, formatPercent } from "../../lib/format";
 import type { ApiHolding } from "../../lib/api/types";
 import type { Currency } from "../../lib/types";
 import { ProgressBar } from "../ui/ProgressBar";
-import { Tag } from "../ui/Tag";
 
 export type HoldingsSortKey = "valor" | "yoc" | "gp";
 
@@ -33,7 +32,6 @@ export function HoldingsTable({ holdings, valorTotal, ccy, decimalesPrecio, sort
         <thead>
           <tr>
             <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Activo</th>
-            <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Etiquetas</th>
             <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Cantidad</th>
             <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Precio</th>
             <th
@@ -70,21 +68,6 @@ export function HoldingsTable({ holdings, valorTotal, ccy, decimalesPrecio, sort
                   <span className="ml-2 inline-flex items-center text-[9px] px-1.5 py-0.5 border border-accent text-accent">EOD</span>
                 ) : null}
                 <div className="text-muted text-[11.5px]">{h.asset.name}</div>
-              </td>
-              <td className="p-2 border-b border-divider">
-                {h.tags.length === 0 ? (
-                  <Tag variant="neutral" className="text-[10px]">
-                    Sin etiqueta
-                  </Tag>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {h.tags.map((t) => (
-                      <Tag key={t} variant="neutral" className="text-[10px]">
-                        {t}
-                      </Tag>
-                    ))}
-                  </div>
-                )}
               </td>
               <td className="p-2 border-b border-divider text-right text-[13px]">{formatNumber(h.quantity)}</td>
               <td className="p-2 border-b border-divider text-right text-[13px]">{formatCurrency(h.price, ccy, decimalesPrecio)}</td>

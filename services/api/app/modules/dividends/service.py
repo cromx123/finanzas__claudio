@@ -37,6 +37,20 @@ def _project_future_events(last_event: DividendEvent, through: date) -> list[Div
     return projected
 
 
+def _event_row(lot, event: DividendEvent, withholding: float, estado: str) -> DividendCalendarEvent:
+    total_bruto = lot.quantity * float(event.amount_per_share)
+    return DividendCalendarEvent(
+        yahoo_symbol=lot.asset.yahoo_symbol,
+        name=lot.asset.name,
+        ex_date=event.ex_date,
+        amount_per_share=float(event.amount_per_share),
+        quantity=lot.quantity,
+        total_bruto=total_bruto,
+        total_neto=total_bruto * (1 - withholding),
+        estado=estado,
+    )
+
+
 def get_calendar(db: Session, user: User, portfolio: Portfolio, year: int) -> DividendCalendarOut:
     ledger = run_ledger(db, portfolio.id)
     year_end = date(year, 12, 31)
@@ -53,19 +67,28 @@ def get_calendar(db: Session, user: User, portfolio: Portfolio, year: int) -> Di
 
         withholding = withholding_for_country(db, user, lot.asset.country)
         for e in sorted(this_year, key=lambda x: x.ex_date):
-            total_bruto = lot.quantity * float(e.amount_per_share)
-            events.append(
-                DividendCalendarEvent(
-                    yahoo_symbol=lot.asset.yahoo_symbol,
-                    name=lot.asset.name,
-                    ex_date=e.ex_date,
-                    amount_per_share=float(e.amount_per_share),
-                    quantity=lot.quantity,
-                    total_bruto=total_bruto,
-                    total_neto=total_bruto * (1 - withholding),
-                    estado="Pagado" if e.ex_date <= today else "Estimado",
-                )
-            )
+            events.append(_event_row(lot, e, withholding, "Pagado" if e.ex_date <= today else "Estimado"))
 
     events.sort(key=lambda e: e.ex_date)
     return DividendCalendarOut(portfolio_id=str(portfolio.id), currency=portfolio.currency, year=year, events=events)
+
+
+def list_paid_dividends(db: Session, user: User, portfolio: Portfolio) -> list[DividendCalendarEvent]:
+    """Every dividend event already paid (ex_date in the past) for assets
+    currently held in this portfolio — the "abonos" feed for the movements
+    ledger. Uses the same current-holding-quantity approximation as
+    get_calendar (this app doesn't track historical share count per date).
+    """
+    ledger = run_ledger(db, portfolio.id)
+    today = date.today()
+
+    events: list[DividendCalendarEvent] = []
+    for asset_id, lot in ledger.holdings.items():
+        withholding = withholding_for_country(db, user, lot.asset.country)
+        paid = db.scalars(
+            select(DividendEvent).where(DividendEvent.asset_id == asset_id, DividendEvent.ex_date <= today)
+        )
+        events.extend(_event_row(lot, e, withholding, "Pagado") for e in paid)
+
+    events.sort(key=lambda e: e.ex_date)
+    return events
