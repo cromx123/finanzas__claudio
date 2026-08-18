@@ -19,6 +19,15 @@ export function usePortfolioSummary(portfolioId: string | null) {
   });
 }
 
+export function usePortfolioPerformance(portfolioId: string | null, range: string) {
+  return useQuery({
+    queryKey: ["portfolio-performance", portfolioId, range],
+    queryFn: () => client.getPortfolioPerformance(portfolioId as string, range),
+    enabled: !!portfolioId,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useCountryAllocation(currency: string) {
   return useQuery({
     queryKey: ["country-allocation", currency],
@@ -65,6 +74,7 @@ function useInvalidatePortfolio(portfolioId: string) {
   return () => {
     qc.invalidateQueries({ queryKey: ["portfolio-summary", portfolioId] });
     qc.invalidateQueries({ queryKey: ["transactions", portfolioId] });
+    qc.invalidateQueries({ queryKey: ["portfolio-performance", portfolioId] });
   };
 }
 
@@ -72,6 +82,15 @@ export function useAddTransaction(portfolioId: string) {
   const invalidate = useInvalidatePortfolio(portfolioId);
   return useMutation({
     mutationFn: (input: Parameters<typeof client.addTransaction>[1]) => client.addTransaction(portfolioId, input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateTransaction(portfolioId: string) {
+  const invalidate = useInvalidatePortfolio(portfolioId);
+  return useMutation({
+    mutationFn: ({ transactionId, input }: { transactionId: string; input: Parameters<typeof client.updateTransaction>[2] }) =>
+      client.updateTransaction(portfolioId, transactionId, input),
     onSuccess: invalidate,
   });
 }
@@ -104,6 +123,36 @@ export function useSetHoldingTags(portfolioId: string) {
 // FX rates
 export function useFxRates() {
   return useQuery({ queryKey: ["fx-rates"], queryFn: client.getFxRates, ...staticQuery });
+}
+
+export function useFxRateDetails() {
+  return useQuery({ queryKey: ["fx-rate-details"], queryFn: client.getFxRateDetails, ...staticQuery });
+}
+
+function useInvalidateFxRates() {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: ["fx-rates"] });
+    qc.invalidateQueries({ queryKey: ["fx-rate-details"] });
+    qc.invalidateQueries({ queryKey: ["goals-progress"] });
+    qc.invalidateQueries({ queryKey: ["country-allocation"] });
+  };
+}
+
+export function useSetFxRate() {
+  const invalidate = useInvalidateFxRates();
+  return useMutation({
+    mutationFn: ({ currency, rate }: { currency: string; rate: number }) => client.setFxRate(currency, rate),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRefreshFxRates() {
+  const invalidate = useInvalidateFxRates();
+  return useMutation({
+    mutationFn: client.refreshFxRates,
+    onSuccess: invalidate,
+  });
 }
 
 // Tags
@@ -148,12 +197,40 @@ export function useScreener() {
   return useQuery({ queryKey: ["screener"], queryFn: client.getScreener, staleTime: 5 * 60_000 });
 }
 
+export function useAddScreenerAsset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: client.addScreenerAsset,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["screener"] }),
+  });
+}
+
 export function useAssetDetail(yahooSymbol: string | null) {
   return useQuery({
     queryKey: ["asset-detail", yahooSymbol],
     queryFn: () => client.getAssetDetail(yahooSymbol as string),
     enabled: !!yahooSymbol,
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useAssetPriceOnDate(yahooSymbol: string | null, isoDate: string | null) {
+  return useQuery({
+    queryKey: ["asset-price-on-date", yahooSymbol, isoDate],
+    queryFn: () => client.getPriceOnDate(yahooSymbol as string, isoDate as string),
+    enabled: !!yahooSymbol && !!isoDate,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+export function useAssetSearch(query: string) {
+  const q = query.trim();
+  return useQuery({
+    queryKey: ["asset-search", q.toUpperCase()],
+    queryFn: () => client.searchAssets(q),
+    enabled: q.length >= 1,
+    staleTime: 60_000,
   });
 }
 
@@ -175,4 +252,25 @@ export function useDividendCalendar(portfolioId: string | null, year: number) {
 // Movements
 export function useMovements() {
   return useQuery({ queryKey: ["movements"], queryFn: client.getMovements, staleTime: 30_000 });
+}
+
+// Alerts
+export function useAlerts() {
+  return useQuery({ queryKey: ["alerts"], queryFn: client.listAlerts, staleTime: 30_000 });
+}
+
+export function useCreateAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: client.createAlert,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
+  });
+}
+
+export function useDeleteAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: client.deleteAlert,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
+  });
 }

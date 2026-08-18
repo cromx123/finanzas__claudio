@@ -1,4 +1,4 @@
-import { formatCompactUsd, formatDecimal, formatPercent } from "../format";
+import { formatCompactUsd, formatDecimal, formatPercent, truncate } from "../format";
 import type { ApiComparadorAsset } from "../api/types";
 import type { ComparadorParams } from "../types";
 
@@ -62,7 +62,7 @@ export interface MetricRow {
 export function buildMetricRows(a: ApiComparadorAsset, b: ApiComparadorAsset): MetricRow[] {
   const nn = (v: number | null) => (v === null ? "—" : formatPercent(v));
   const px = (v: number | null) => (v === null ? "—" : `US$${formatDecimal(v, 2)}`);
-  const aum = (v: number | null) => (v === null ? "—" : `US$${(v / 1e9).toFixed(1).replace(".", ",")}B`);
+  const aum = (v: number | null) => (v === null ? "—" : `US$${truncate(v / 1e9, 1).toFixed(1).replace(".", ",")}B`);
   return [
     { label: "Precio actual", a: px(a.price), b: px(b.price) },
     { label: "Yield actual", a: nn(a.yield_inicial), b: nn(b.yield_inicial) },

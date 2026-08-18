@@ -1,6 +1,8 @@
 import { api } from "./http";
 import type {
+  ApiAlert,
   ApiAssetDetail,
+  ApiAssetSearchResult,
   ApiComparadorAsset,
   ApiCountryAllocation,
   ApiDividendCalendar,
@@ -9,7 +11,9 @@ import type {
   ApiGoalsProgress,
   ApiMovement,
   ApiPortfolio,
+  ApiPortfolioPerformance,
   ApiPortfolioSummary,
+  ApiPriceOnDate,
   ApiScreenerAsset,
   ApiTransaction,
 } from "./types";
@@ -21,6 +25,8 @@ export const createPortfolio = (input: { name: string; currency: string }) =>
 export const renamePortfolio = (id: string, name: string) => api.patch<ApiPortfolio>(`/v1/portfolios/${id}`, { name });
 export const deletePortfolio = (id: string) => api.delete<void>(`/v1/portfolios/${id}`);
 export const getPortfolioSummary = (id: string) => api.get<ApiPortfolioSummary>(`/v1/portfolios/${id}/summary`);
+export const getPortfolioPerformance = (id: string, range: string) =>
+  api.get<ApiPortfolioPerformance>(`/v1/portfolios/${id}/performance?range=${range}`);
 export const getCountryAllocation = (currency: string) =>
   api.get<ApiCountryAllocation>(`/v1/portfolios/allocation/country?currency=${currency}`);
 
@@ -31,6 +37,11 @@ export const addTransaction = (
   portfolioId: string,
   input: { yahoo_symbol: string; type: "buy" | "sell"; trade_date: string; quantity: number; price: number }
 ) => api.post<ApiTransaction>(`/v1/portfolios/${portfolioId}/transactions`, input);
+export const updateTransaction = (
+  portfolioId: string,
+  transactionId: string,
+  input: { trade_date: string; quantity: number; price: number }
+) => api.patch<ApiTransaction>(`/v1/portfolios/${portfolioId}/transactions/${transactionId}`, input);
 export const deleteTransaction = (portfolioId: string, transactionId: string) =>
   api.delete<void>(`/v1/portfolios/${portfolioId}/transactions/${transactionId}`);
 
@@ -42,6 +53,10 @@ export const setHoldingTags = (portfolioId: string, assetId: string, tags: strin
 
 // FX rates
 export const getFxRates = () => api.get<Record<string, number>>("/v1/fx-rates");
+export const getFxRateDetails = () => api.get<Record<string, ApiFxRateDetail>>("/v1/fx-rates/detail");
+export const setFxRate = (currency: string, rate_to_clp: number) =>
+  api.put<Record<string, number>>("/v1/fx-rates", { currency, rate_to_clp });
+export const refreshFxRates = () => api.post<Record<string, number>>("/v1/fx-rates/refresh");
 
 // Tags
 export const listTags = () => api.get<string[]>("/v1/tags");
@@ -56,7 +71,11 @@ export const getGoalsProgress = (currency: string) => api.get<ApiGoalsProgress>(
 
 // Screener
 export const getScreener = () => api.get<ApiScreenerAsset[]>("/v1/screener");
+export const addScreenerAsset = (yahooSymbol: string) => api.post<ApiScreenerAsset>("/v1/screener", { yahoo_symbol: yahooSymbol });
 export const getAssetDetail = (yahooSymbol: string) => api.get<ApiAssetDetail>(`/v1/assets/${yahooSymbol}`);
+export const searchAssets = (q: string) => api.get<ApiAssetSearchResult[]>(`/v1/assets/search?q=${encodeURIComponent(q)}`);
+export const getPriceOnDate = (yahooSymbol: string, isoDate: string) =>
+  api.get<ApiPriceOnDate>(`/v1/assets/${encodeURIComponent(yahooSymbol)}/price-on-date?on=${isoDate}`);
 
 // Comparador
 export const getComparadorAssets = () => api.get<ApiComparadorAsset[]>("/v1/comparador/assets");
@@ -67,3 +86,9 @@ export const getDividendCalendar = (portfolioId: string, year: number) =>
 
 // Movements
 export const getMovements = () => api.get<ApiMovement[]>("/v1/movements");
+
+// Alerts
+export const listAlerts = () => api.get<ApiAlert[]>("/v1/alerts");
+export const createAlert = (input: { yahoo_symbol: string; condition: "price_below" | "price_above"; threshold: number }) =>
+  api.post<ApiAlert>("/v1/alerts", input);
+export const deleteAlert = (id: string) => api.delete<void>(`/v1/alerts/${id}`);

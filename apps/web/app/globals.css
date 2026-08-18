@@ -26,6 +26,19 @@
   --color-neutral-700: #605d5d;
   --color-neutral-800: #444141;
   --color-neutral-900: #2d2b2b;
+
+  /* Categorical series palette (multi-color composition bars) — validated
+     for CVD/contrast against this theme's surfaces via the dataviz skill.
+     Red is deliberately excluded: the app's accent red already means
+     "loss/negative" everywhere else, so reusing it here as "just the Nth
+     asset" would be misleading. */
+  --color-cat-1: #2a78d6;
+  --color-cat-2: #eb6834;
+  --color-cat-3: #1baf7a;
+  --color-cat-4: #eda100;
+  --color-cat-5: #e87ba4;
+  --color-cat-6: #008300;
+  --color-cat-7: #4a3aa7;
 }
 
 /* Dark mode — extrapolated from the same ramps (no exact spec in the handoff). */
@@ -44,6 +57,14 @@
   --color-neutral-700: #bab6b6;
   --color-neutral-800: #d7d3d3;
   --color-neutral-900: #f8f4f4;
+
+  --color-cat-1: #3987e5;
+  --color-cat-2: #d95926;
+  --color-cat-3: #199e70;
+  --color-cat-4: #c98500;
+  --color-cat-5: #d55181;
+  --color-cat-6: #008300;
+  --color-cat-7: #9085e9;
 }
 
 @theme inline {
@@ -75,6 +96,14 @@
   --color-neutral-700: var(--color-neutral-700);
   --color-neutral-800: var(--color-neutral-800);
   --color-neutral-900: var(--color-neutral-900);
+
+  --color-cat-1: var(--color-cat-1);
+  --color-cat-2: var(--color-cat-2);
+  --color-cat-3: var(--color-cat-3);
+  --color-cat-4: var(--color-cat-4);
+  --color-cat-5: var(--color-cat-5);
+  --color-cat-6: var(--color-cat-6);
+  --color-cat-7: var(--color-cat-7);
 
   --radius-none: 0px;
   --radius-sm: 0px;

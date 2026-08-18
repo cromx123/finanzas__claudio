@@ -21,6 +21,9 @@ _SUFFIX_MAP: dict[str, MarketInfo] = {
     ".MC": MarketInfo(
         exchange_mic="XMAD", currency="EUR", timezone="Europe/Madrid", close_time="17:30"
     ),
+    ".T": MarketInfo(
+        exchange_mic="XTKS", currency="JPY", timezone="Asia/Tokyo", close_time="15:30"
+    ),
 }
 
 _US_MARKET = MarketInfo(

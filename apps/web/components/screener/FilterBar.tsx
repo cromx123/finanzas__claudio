@@ -22,7 +22,15 @@ const PE_OPTIONS: { label: string; value: `${0 | 15 | 25}` }[] = [
 ];
 const ROE_OPTIONS = PE_OPTIONS.map((o) => ({ label: o.label.replace("≤", "≥").replace("≥Todos", "Todos"), value: o.value }));
 
-export function FilterBar({ filters, onChange }: { filters: ScreenerFilters; onChange: (f: ScreenerFilters) => void }) {
+export function FilterBar({
+  filters,
+  onChange,
+  right,
+}: {
+  filters: ScreenerFilters;
+  onChange: (f: ScreenerFilters) => void;
+  right?: React.ReactNode;
+}) {
   return (
     <div className="flex items-center gap-3.5 flex-wrap border-y-2 border-divider py-3">
       <Input
@@ -59,6 +67,7 @@ export function FilterBar({ filters, onChange }: { filters: ScreenerFilters; onC
           size="compact"
         />
       </div>
+      {right ? <div className="ml-auto">{right}</div> : null}
     </div>
   );
 }

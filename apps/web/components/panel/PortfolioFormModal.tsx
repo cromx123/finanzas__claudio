@@ -7,7 +7,7 @@ import { Button } from "../ui/Button";
 import { Input, Select } from "../ui/Input";
 import { Modal } from "../ui/Modal";
 
-const CURRENCIES: Currency[] = ["CLP", "USD", "EUR"];
+const CURRENCIES: Currency[] = ["CLP", "USD", "EUR", "JPY"];
 
 interface PortfolioFormModalProps {
   portfolio?: ApiPortfolio;

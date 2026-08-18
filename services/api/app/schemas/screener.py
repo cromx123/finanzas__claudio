@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ScreenerAssetOut(BaseModel):
@@ -43,3 +44,18 @@ class AssetDetailOut(BaseModel):
     asset: ScreenerAssetOut
     sparkline: list[float]
     dividend_history: list[DividendHistoryPoint]
+
+
+class AssetSearchResultOut(BaseModel):
+    symbol: str
+    name: str
+    exchange: str | None
+
+
+class AssetIngestIn(BaseModel):
+    yahoo_symbol: str = Field(min_length=1, max_length=20)
+
+
+class PriceOnDateOut(BaseModel):
+    date: date
+    price: float

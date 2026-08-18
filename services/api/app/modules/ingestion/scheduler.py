@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.models.portfolio import Asset
+from app.modules.alerts import service as alerts_service
 from app.modules.fx import service as fx_service
 from app.modules.ingestion.providers.yahoo import YahooProvider
 from app.modules.ingestion.service import ingest_daily_price
@@ -41,12 +42,22 @@ def _ingest_matching(predicate) -> None:
                 logger.exception("failed to ingest price for %s", asset.yahoo_symbol)
 
 
+def check_price_alerts() -> None:
+    with SessionLocal() as db:
+        try:
+            alerts_service.check_alerts(db)
+        except Exception:
+            logger.exception("failed to check price alerts")
+
+
 def ingest_santiago_close() -> None:
     _ingest_matching(lambda symbol: symbol.endswith(".SN"))
+    check_price_alerts()
 
 
 def ingest_nyse_close() -> None:
     _ingest_matching(lambda symbol: not symbol.endswith((".SN", ".MC")))
+    check_price_alerts()
 
 
 def refresh_fx_rates() -> None:

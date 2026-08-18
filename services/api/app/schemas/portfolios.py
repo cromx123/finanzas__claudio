@@ -37,6 +37,12 @@ class TransactionIn(BaseModel):
     price: float = Field(gt=0)
 
 
+class TransactionUpdateIn(BaseModel):
+    trade_date: date
+    quantity: float = Field(gt=0)
+    price: float = Field(gt=0)
+
+
 class TransactionOut(BaseModel):
     id: uuid.UUID
     portfolio_id: uuid.UUID
@@ -76,6 +82,8 @@ class PortfolioSummaryOut(BaseModel):
     gp_no_realizada: float
     dividendo_anual_bruto: float
     dividendo_anual_neto: float
+    dividendos_cobrados_bruto: float
+    dividendos_cobrados_neto: float
 
 
 class HoldingTagsIn(BaseModel):
@@ -90,3 +98,15 @@ class CountryAllocationRow(BaseModel):
 class CountryAllocationOut(BaseModel):
     currency: str
     rows: list[CountryAllocationRow]
+
+
+class PerformancePointOut(BaseModel):
+    date: date
+    cartera_value: float
+    benchmark_index: float | None
+
+
+class PortfolioPerformanceOut(BaseModel):
+    start_date: date
+    currency: str
+    points: list[PerformancePointOut]

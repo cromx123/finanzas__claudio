@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Plus, History } from "lucide-react";
+import { Pencil, Plus, History, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
@@ -21,11 +21,8 @@ import { Tag } from "../../components/ui/Tag";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { usePortfolioUi } from "../../context/Portfolios";
 import type { AllocationRow } from "../../lib/calc/portfolio";
-import { seedFromId } from "../../lib/calc/portfolioSeed";
 import { buildPerformancePoints } from "../../lib/calc/series";
 import { decimalesForCurrency, formatCurrency, formatDecimal, formatPercent } from "../../lib/format";
-import { SP500_SERIE } from "../../lib/mock/portfolios";
-import { generateSeries } from "../../lib/random";
 import type { AllocBy, Currency, RangeKey } from "../../lib/types";
 import {
   useAddTransaction,
@@ -33,7 +30,9 @@ import {
   useDeletePortfolio,
   useDeletePosition,
   useDeleteTransaction,
+  useUpdateTransaction,
   useDividendCalendar,
+  usePortfolioPerformance,
   usePortfolios,
   usePortfolioSummary,
   useRenamePortfolio,
@@ -41,13 +40,15 @@ import {
 } from "../../hooks/useApi";
 
 const RANGE_OPTIONS: { label: string; value: RangeKey }[] = [
+  { label: "1D", value: "1D" },
+  { label: "1W", value: "1W" },
+  { label: "1M", value: "1M" },
+  { label: "3M", value: "3M" },
   { label: "1A", value: "1A" },
   { label: "3A", value: "3A" },
   { label: "5A", value: "5A" },
 ];
 
-const MOCK_CHART_DRIFT = 0.012;
-const MOCK_CHART_VOL = 0.045;
 const CURRENT_YEAR = new Date().getFullYear();
 
 function PanelHelp() {
@@ -81,6 +82,7 @@ export default function PanelPage() {
   const deletePortfolioMut = useDeletePortfolio();
   const addTransaction = useAddTransaction(portfolioId ?? "");
   const deleteTransactionMut = useDeleteTransaction(portfolioId ?? "");
+  const updateTransactionMut = useUpdateTransaction(portfolioId ?? "");
   const deletePositionMut = useDeletePosition(portfolioId ?? "");
 
   const [range, setRange] = useState<RangeKey>("3A");
@@ -95,12 +97,16 @@ export default function PanelPage() {
   const [showEditPortfolio, setShowEditPortfolio] = useState(false);
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
 
-  const perfPoints = useMemo(() => {
-    if (!portfolioId) return [];
-    const full = generateSeries(seedFromId(portfolioId), MOCK_CHART_DRIFT, MOCK_CHART_VOL);
-    const fullBench = generateSeries(SP500_SERIE.seed, SP500_SERIE.drift, SP500_SERIE.vol);
-    return buildPerformancePoints(full, fullBench, range);
-  }, [portfolioId, range]);
+  const {
+    data: performance,
+    isLoading: loadingPerformance,
+    isFetching: fetchingPerformance,
+    refetch: refetchPerformance,
+  } = usePortfolioPerformance(portfolioId, range);
+  const perfPoints = useMemo(
+    () => (performance ? buildPerformancePoints(performance.points, range) : []),
+    [performance, range]
+  );
 
   const sortedHoldings = useMemo(() => {
     if (!summary) return [];
@@ -209,7 +215,14 @@ export default function PanelPage() {
     },
     { label: "Aportes de capital", value: formatCurrency(summary.aportes, moneda), sub: "capital invertido en compras" },
     { label: "Compras totales", value: formatCurrency(summary.compras_totales, moneda), sub: "acumulado histórico" },
-    { label: "Dividendos cobrados", value: formatCurrency(0, moneda), sub: `histórico, ${subDivLabel}` },
+    {
+      label: "Dividendos cobrados",
+      value: formatCurrency(
+        netoRetencion ? summary.dividendos_cobrados_neto : summary.dividendos_cobrados_bruto,
+        moneda
+      ),
+      sub: `histórico, ${subDivLabel}`,
+    },
     {
       label: "G/P realizada",
       value: `${summary.gp_realizada >= 0 ? "+" : ""}${formatCurrency(summary.gp_realizada, moneda)}`,
@@ -308,17 +321,42 @@ export default function PanelPage() {
                   S&amp;P 500
                 </span>
                 <span className="text-muted text-[11.5px] font-mono">
-                  {hoverPoint ? `${hoverPoint.label} · Cartera ${formatDecimal(hoverPoint.cartera)} · S&P 500 ${formatDecimal(hoverPoint.benchmark)}` : ""}
+                  {hoverPoint
+                    ? `${hoverPoint.label} · Cartera ${formatDecimal(hoverPoint.cartera)} · S&P 500 ${
+                        hoverPoint.benchmark !== null ? formatDecimal(hoverPoint.benchmark) : "—"
+                      }`
+                    : ""}
                 </span>
                 <div className="ml-auto flex items-center gap-2.5">
                   <SegmentedControl options={RANGE_OPTIONS} value={range} onChange={setRange} size="compact" />
                   <ToggleButton active={bench} onClick={() => setBench((v) => !v)} variant="ink">
                     VS S&amp;P 500
                   </ToggleButton>
+                  <button
+                    type="button"
+                    onClick={() => refetchPerformance()}
+                    disabled={fetchingPerformance}
+                    aria-label="Actualizar gráfico"
+                    title="Actualizar gráfico"
+                    className="text-ink/50 hover:text-accent disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw size={15} strokeWidth={1.8} className={fetchingPerformance ? "animate-spin" : ""} />
+                  </button>
                 </div>
               </div>
-              <PerformanceChart data={perfPoints} benchmarkOn={bench} onHoverIndex={setHoverIndex} />
-              <p className="text-muted text-[11px] mt-1.5">Serie ilustrativa — todavía no ingestamos histórico real de valor de cartera.</p>
+              {loadingPerformance ? (
+                <p className="text-muted text-sm py-16 text-center">Cargando historial…</p>
+              ) : perfPoints.length === 0 ? (
+                <p className="text-muted text-sm py-16 text-center">
+                  Todavía no hay suficiente historial de precios para graficar la evolución.
+                </p>
+              ) : (
+                <PerformanceChart data={perfPoints} benchmarkOn={bench} onHoverIndex={setHoverIndex} />
+              )}
+              <p className="text-muted text-[11px] mt-1.5">
+                Valor real de la cartera desde tu primera compra ({performance?.start_date}) · S&amp;P 500 indexado para comparar — ambas
+                líneas en base 100, no son directamente comparables en moneda.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-11">
@@ -385,6 +423,9 @@ export default function PanelPage() {
           ccy={moneda}
           decimalesPrecio={decimalesPrecio}
           onClose={() => setShowHistoryModal(false)}
+          onUpdate={async (id, input) => {
+            await updateTransactionMut.mutateAsync({ transactionId: id, input });
+          }}
           onDelete={(id) => deleteTransactionMut.mutate(id)}
         />
       )}

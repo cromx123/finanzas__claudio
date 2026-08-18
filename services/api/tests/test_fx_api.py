@@ -12,7 +12,7 @@ class FakeFxProvider(Provider):
     the suite runs.
     """
 
-    _RATES = {"USDCLP=X": 950.0, "EURCLP=X": 1020.0}
+    _RATES = {"USDCLP=X": 950.0, "EURCLP=X": 1020.0, "JPYCLP=X": 6.4}
 
     def get_quote(self, symbol: str) -> QuoteResult | None:
         rate = self._RATES.get(symbol)
@@ -32,6 +32,9 @@ class FakeFxProvider(Provider):
     def search(self, query: str):
         return []
 
+    def get_price_on(self, symbol: str, on: date) -> QuoteResult | None:
+        return None
+
 
 def _register(client) -> str:
     resp = client.post("/v1/auth/register", json={"email": "fx-test@example.com", "password": "SuperSecret123!"})
@@ -49,7 +52,7 @@ def test_refresh_rates_pulls_latest_quote_from_yahoo(client, monkeypatch):
 
     resp = client.post("/v1/fx-rates/refresh", headers=_auth(token))
     assert resp.status_code == 200
-    assert resp.json() == {"CLP": 1.0, "USD": 950.0, "EUR": 1020.0}
+    assert resp.json() == {"CLP": 1.0, "USD": 950.0, "EUR": 1020.0, "JPY": 6.4}
 
     detail = client.get("/v1/fx-rates/detail", headers=_auth(token)).json()
     assert detail["USD"]["source"] == "yahoo"

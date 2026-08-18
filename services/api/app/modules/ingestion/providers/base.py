@@ -41,3 +41,6 @@ class Provider(ABC):
 
     @abstractmethod
     def search(self, query: str) -> list[SearchResult]: ...
+
+    @abstractmethod
+    def get_price_on(self, symbol: str, on: date) -> QuoteResult | None: ...

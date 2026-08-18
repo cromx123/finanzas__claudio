@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.modules.alerts.router import router as alerts_router
 from app.modules.auth.router import router as auth_router
 from app.modules.comparador.router import router as comparador_router
 from app.modules.dividends.router import router as dividends_router
@@ -31,6 +32,7 @@ app.include_router(screener_router, prefix="/v1")
 app.include_router(comparador_router, prefix="/v1")
 app.include_router(dividends_router, prefix="/v1")
 app.include_router(movements_router, prefix="/v1")
+app.include_router(alerts_router, prefix="/v1")
 app.include_router(ingestion_router)
 
 

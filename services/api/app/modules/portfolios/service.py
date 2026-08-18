@@ -1,20 +1,40 @@
 from __future__ import annotations
 
+import calendar
+import logging
 import uuid
+from bisect import bisect_right
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.market import Fundamentals, Price
+from app.models.market import DividendEvent, Fundamentals, Price
 from app.models.portfolio import Asset, Portfolio, Transaction, TransactionType
 from app.models.strategy import HoldingTag, Tag
 from app.models.user import User, UserTaxRule
-from app.modules.assets.service import get_or_create_asset, latest_price, refresh_quote
+from app.modules.assets.service import get_or_create_asset, ingest_full_asset, latest_price, refresh_quote
 from app.modules.fx import service as fx_service
 from app.modules.ingestion.providers.base import Provider
-from app.schemas.portfolios import CountryAllocationOut, CountryAllocationRow, HoldingOut, PortfolioSummaryOut
+from app.schemas.portfolios import (
+    CountryAllocationOut,
+    CountryAllocationRow,
+    HoldingOut,
+    PerformancePointOut,
+    PortfolioPerformanceOut,
+    PortfolioSummaryOut,
+)
+
+logger = logging.getLogger(__name__)
+
+_PERFORMANCE_RANGE_YEARS: dict[str, int] = {"1A": 1, "3A": 3, "5A": 5}
+# Short ranges need daily sampling — monthly buckets would collapse a 1-week
+# window to a single point. Mapped to a yfinance period with enough buffer
+# to always cover the range's start date even across a weekend/holiday run.
+_PERFORMANCE_RANGE_DAYS: dict[str, int] = {"1D": 1, "1W": 7, "1M": 30, "3M": 90}
+_BENCHMARK_PERIOD_FOR_SHORT_RANGE: dict[str, str] = {"1D": "5d", "1W": "1mo", "1M": "3mo", "3M": "6mo"}
+_BENCHMARK_SYMBOL = "^GSPC"
 
 
 def withholding_for_country(db: Session, user: User, country_code: str) -> float:
@@ -32,6 +52,10 @@ class PortfolioNotFoundError(Exception):
 
 
 class InsufficientQuantityError(Exception):
+    pass
+
+
+class TransactionNotFoundError(Exception):
     pass
 
 
@@ -66,7 +90,9 @@ def delete_portfolio(db: Session, portfolio: Portfolio) -> None:
     db.commit()
 
 
-def current_quantity(db: Session, portfolio_id: uuid.UUID, asset_id: uuid.UUID) -> float:
+def current_quantity(
+    db: Session, portfolio_id: uuid.UUID, asset_id: uuid.UUID, exclude_transaction_id: uuid.UUID | None = None
+) -> float:
     rows = db.scalars(
         select(Transaction)
         .where(Transaction.portfolio_id == portfolio_id, Transaction.asset_id == asset_id)
@@ -74,6 +100,8 @@ def current_quantity(db: Session, portfolio_id: uuid.UUID, asset_id: uuid.UUID) 
     )
     qty = 0.0
     for t in rows:
+        if exclude_transaction_id is not None and t.id == exclude_transaction_id:
+            continue
         if t.type == TransactionType.BUY:
             qty += float(t.quantity or 0)
         elif t.type == TransactionType.SELL:
@@ -98,7 +126,19 @@ def add_transaction(
             "— no se pueden mezclar monedas en un mismo portafolio"
         )
     if latest_price(db, asset.id) is None:
-        refresh_quote(db, provider, asset)
+        # First time this asset is bought: do the full ingestion (fundamentals,
+        # 5y price history, dividends) instead of just a live quote, so it
+        # shows up in the Screener and the performance chart immediately
+        # instead of only after a separate manual "Agregar ticker" — that's
+        # the one-time cost that makes every later page load fast (reads
+        # from Postgres, no live Yahoo calls). Falls back to a plain quote
+        # if the fuller fetch fails, so a Yahoo hiccup doesn't block recording
+        # the purchase.
+        try:
+            ingest_full_asset(db, provider, asset.yahoo_symbol)
+        except Exception:
+            logger.warning("full ingestion failed for new asset %s, falling back to a live quote", asset.yahoo_symbol, exc_info=True)
+            refresh_quote(db, provider, asset)
 
     if tx_type == "sell":
         owned = current_quantity(db, portfolio.id, asset.id)
@@ -138,6 +178,31 @@ def delete_transaction(db: Session, portfolio: Portfolio, transaction_id: uuid.U
         return
     db.delete(tx)
     db.commit()
+
+
+def update_transaction(
+    db: Session, portfolio: Portfolio, transaction_id: uuid.UUID, trade_date: date, quantity: float, price: float
+) -> Transaction:
+    """Fixes a typo'd date/quantity/price on an existing transaction without
+    the delete-and-re-add round trip — the asset and buy/sell type are fixed
+    (changing either is really a different transaction, not a correction).
+    """
+    tx = db.get(Transaction, transaction_id)
+    if tx is None or tx.portfolio_id != portfolio.id:
+        raise TransactionNotFoundError(str(transaction_id))
+
+    if tx.type == TransactionType.SELL:
+        owned = current_quantity(db, portfolio.id, tx.asset_id, exclude_transaction_id=tx.id)
+        if quantity > owned + 1e-6:
+            raise InsufficientQuantityError(f"only {owned} shares of {tx.asset.yahoo_symbol} available")
+
+    tx.trade_date = trade_date
+    tx.quantity = quantity
+    tx.price = price
+    tx.gross_amount = quantity * price
+    db.commit()
+    db.refresh(tx)
+    return tx
 
 
 def delete_position(db: Session, portfolio: Portfolio, asset_id: uuid.UUID) -> None:
@@ -213,8 +278,59 @@ def run_ledger(db: Session, portfolio_id: uuid.UUID) -> _LedgerResult:
     return result
 
 
+def _dividends_collected(db: Session, user: User, portfolio_id: uuid.UUID) -> tuple[float, float]:
+    """Total dividends actually paid to date, using the real share count
+    held on each ex-dividend date (reconstructed from transaction history)
+    instead of the current holding — so a position that was sold in full
+    still counts, and a recently bought one isn't credited with dividends
+    paid before it was owned.
+    """
+    txs = list(
+        db.scalars(
+            select(Transaction)
+            .where(Transaction.portfolio_id == portfolio_id, Transaction.asset_id.is_not(None))
+            .order_by(Transaction.trade_date)
+        )
+    )
+    by_asset: dict[uuid.UUID, list[Transaction]] = {}
+    for t in txs:
+        by_asset.setdefault(t.asset_id, []).append(t)
+
+    today = date.today()
+    total_bruto = 0.0
+    total_neto = 0.0
+    for asset_id, asset_txs in by_asset.items():
+        events = list(
+            db.scalars(
+                select(DividendEvent)
+                .where(DividendEvent.asset_id == asset_id, DividendEvent.ex_date <= today)
+                .order_by(DividendEvent.ex_date)
+            )
+        )
+        if not events:
+            continue
+        withholding = withholding_for_country(db, user, asset_txs[0].asset.country)
+        qty = 0.0
+        tx_idx = 0
+        for event in events:
+            while tx_idx < len(asset_txs) and asset_txs[tx_idx].trade_date <= event.ex_date:
+                t = asset_txs[tx_idx]
+                if t.type == TransactionType.BUY:
+                    qty += float(t.quantity or 0)
+                else:
+                    qty = max(0.0, qty - float(t.quantity or 0))
+                tx_idx += 1
+            if qty <= 1e-9:
+                continue
+            gross = qty * float(event.amount_per_share)
+            total_bruto += gross
+            total_neto += gross * (1 - withholding)
+    return total_bruto, total_neto
+
+
 def compute_summary(db: Session, user: User, portfolio: Portfolio) -> PortfolioSummaryOut:
     ledger = run_ledger(db, portfolio.id)
+    dividendos_cobrados_bruto, dividendos_cobrados_neto = _dividends_collected(db, user, portfolio.id)
 
     holdings_out: list[HoldingOut] = []
     valor_total = 0.0
@@ -283,6 +399,8 @@ def compute_summary(db: Session, user: User, portfolio: Portfolio) -> PortfolioS
         gp_no_realizada=valor_total - costo_total,
         dividendo_anual_bruto=dividendo_anual_bruto,
         dividendo_anual_neto=dividendo_anual_neto,
+        dividendos_cobrados_bruto=dividendos_cobrados_bruto,
+        dividendos_cobrados_neto=dividendos_cobrados_neto,
     )
 
 
@@ -303,3 +421,140 @@ def compute_country_allocation(db: Session, user: User, display_currency: str) -
     rows = [CountryAllocationRow(country=country, value=value) for country, value in totals.items()]
     rows.sort(key=lambda r: r.value, reverse=True)
     return CountryAllocationOut(currency=display_currency, rows=rows)
+
+
+def _add_months(d: date, months: int) -> date:
+    month_index = d.month - 1 + months
+    year = d.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _monthly_sample_dates(start: date, end: date) -> list[date]:
+    """Roughly one point per month from `start` to `end` inclusive, always
+    anchored on `start` and `end` exactly (so the chart's first point is
+    truly the earliest purchase date and the last is always "today")."""
+    dates = [start]
+    cursor = start
+    while True:
+        cursor = _add_months(cursor, 1)
+        if cursor >= end:
+            break
+        dates.append(cursor)
+    if dates[-1] != end:
+        dates.append(end)
+    return dates
+
+
+def _daily_sample_dates(start: date, end: date) -> list[date]:
+    """One point per calendar day — used for the short ranges (1D/1W/1M/3M)
+    where monthly buckets would collapse to almost nothing."""
+    dates = []
+    cursor = start
+    while cursor < end:
+        dates.append(cursor)
+        cursor += timedelta(days=1)
+    dates.append(end)
+    return dates
+
+
+def get_portfolio_performance(
+    db: Session, provider: Provider, portfolio: Portfolio, range_key: str
+) -> PortfolioPerformanceOut:
+    """Real portfolio market value over time, alongside the S&P 500 for
+    comparison — both independently rebased to 100 by the frontend, so
+    absolute currency/units don't need to match.
+
+    The series always starts at the portfolio's earliest transaction date,
+    clamped to the requested range (1D/1W/1M/3M/1A/3A/5A) — never further
+    back than that range, but never fabricating history that predates the
+    first purchase either, even if a longer range was requested.
+    """
+    today = date.today()
+    earliest = db.scalar(
+        select(func.min(Transaction.trade_date)).where(Transaction.portfolio_id == portfolio.id)
+    )
+    if earliest is None:
+        return PortfolioPerformanceOut(start_date=today, currency=portfolio.currency, points=[])
+
+    if range_key in _PERFORMANCE_RANGE_DAYS:
+        range_start = today - timedelta(days=_PERFORMANCE_RANGE_DAYS[range_key])
+        start = max(earliest, range_start)
+        sample_dates = _daily_sample_dates(start, today)
+        benchmark_period = _BENCHMARK_PERIOD_FOR_SHORT_RANGE[range_key]
+    else:
+        years = _PERFORMANCE_RANGE_YEARS.get(range_key, 3)
+        range_start = _add_months(today, -12 * years)
+        start = max(earliest, range_start)
+        sample_dates = _monthly_sample_dates(start, today)
+        benchmark_period = f"{years}y"
+
+    txs = list(
+        db.scalars(
+            select(Transaction)
+            .where(Transaction.portfolio_id == portfolio.id, Transaction.asset_id.is_not(None))
+            .order_by(Transaction.trade_date)
+        )
+    )
+    asset_ids = {t.asset_id for t in txs}
+
+    # Anchor each asset's price series with its own transaction prices, not
+    # just the ingested Price table — guarantees a real value exists on the
+    # exact date of a purchase even for a ticker that was only ever added
+    # through a plain "buy" (get_or_create_asset + a single live quote), not
+    # the full 5y-history ingestion the Screener's "add ticker" path does.
+    prices_by_asset: dict[uuid.UUID, tuple[list[date], list[float]]] = {}
+    for asset_id in asset_ids:
+        rows = db.execute(
+            select(Price.date, Price.close).where(Price.asset_id == asset_id).order_by(Price.date)
+        ).all()
+        merged: dict[date, float] = {row.date: float(row.close) for row in rows}
+        for t in txs:
+            if t.asset_id == asset_id:
+                merged.setdefault(t.trade_date, float(t.price))
+        ordered = sorted(merged.items())
+        prices_by_asset[asset_id] = ([d for d, _ in ordered], [p for _, p in ordered])
+
+    def price_at_or_before(asset_id: uuid.UUID, on: date) -> float | None:
+        dates, closes = prices_by_asset.get(asset_id, ([], []))
+        idx = bisect_right(dates, on) - 1
+        return closes[idx] if idx >= 0 else None
+
+    benchmark_dates: list[date] = []
+    benchmark_closes: list[float] = []
+    try:
+        history = provider.get_history(_BENCHMARK_SYMBOL, period=benchmark_period)
+        ordered_history = sorted(history, key=lambda q: q.date)
+        benchmark_dates = [q.date for q in ordered_history]
+        benchmark_closes = [q.close for q in ordered_history]
+    except Exception:
+        logger.warning("could not fetch %s benchmark history", _BENCHMARK_SYMBOL, exc_info=True)
+
+    def benchmark_at_or_before(on: date) -> float | None:
+        idx = bisect_right(benchmark_dates, on) - 1
+        return benchmark_closes[idx] if idx >= 0 else None
+
+    points: list[PerformancePointOut] = []
+    qty_by_asset: dict[uuid.UUID, float] = {}
+    tx_idx = 0
+    for d in sample_dates:
+        while tx_idx < len(txs) and txs[tx_idx].trade_date <= d:
+            t = txs[tx_idx]
+            if t.type == TransactionType.BUY:
+                qty_by_asset[t.asset_id] = qty_by_asset.get(t.asset_id, 0.0) + float(t.quantity or 0)
+            else:
+                qty_by_asset[t.asset_id] = max(0.0, qty_by_asset.get(t.asset_id, 0.0) - float(t.quantity or 0))
+            tx_idx += 1
+
+        value = 0.0
+        for asset_id, qty in qty_by_asset.items():
+            if qty <= 1e-9:
+                continue
+            price = price_at_or_before(asset_id, d)
+            if price is not None:
+                value += qty * price
+
+        points.append(PerformancePointOut(date=d, cartera_value=value, benchmark_index=benchmark_at_or_before(d)))
+
+    return PortfolioPerformanceOut(start_date=start, currency=portfolio.currency, points=points)

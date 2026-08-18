@@ -16,9 +16,11 @@ from app.schemas.portfolios import (
     HoldingTagsIn,
     PortfolioIn,
     PortfolioOut,
+    PortfolioPerformanceOut,
     PortfolioSummaryOut,
     TransactionIn,
     TransactionOut,
+    TransactionUpdateIn,
 )
 
 router = APIRouter(prefix="/portfolios", tags=["portfolios"])
@@ -83,6 +85,17 @@ def get_summary(
     return service.compute_summary(db, user, portfolio)
 
 
+@router.get("/{portfolio_id}/performance", response_model=PortfolioPerformanceOut)
+def get_performance(
+    portfolio_id: uuid.UUID,
+    range: str = Query(default="3A", pattern="^(1D|1W|1M|3M|1A|3A|5A)$"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PortfolioPerformanceOut:
+    portfolio = _get_owned(db, user, portfolio_id)
+    return service.get_portfolio_performance(db, YahooProvider(), portfolio, range)
+
+
 @router.get("/{portfolio_id}/transactions", response_model=list[TransactionOut])
 def list_transactions(
     portfolio_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)
@@ -113,6 +126,25 @@ def add_transaction(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except service.InsufficientQuantityError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.patch("/{portfolio_id}/transactions/{transaction_id}", response_model=TransactionOut)
+def update_transaction(
+    portfolio_id: uuid.UUID,
+    transaction_id: uuid.UUID,
+    payload: TransactionUpdateIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TransactionOut:
+    portfolio = _get_owned(db, user, portfolio_id)
+    try:
+        return service.update_transaction(
+            db, portfolio, transaction_id, payload.trade_date, payload.quantity, payload.price
+        )
+    except service.TransactionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="transaction not found") from exc
     except service.InsufficientQuantityError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 

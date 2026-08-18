@@ -20,6 +20,11 @@ class GoalOut(GoalIn):
     model_config = {"from_attributes": True}
 
 
+class HoldingContribution(BaseModel):
+    yahoo_symbol: str
+    valor_nativo: float
+
+
 class PortfolioContribution(BaseModel):
     id: uuid.UUID
     name: str
@@ -27,6 +32,7 @@ class PortfolioContribution(BaseModel):
     valor_nativo: float
     valor_convertido: float
     dividendo_mensual_convertido: float
+    holdings: list[HoldingContribution]
 
 
 class FiStep(BaseModel):

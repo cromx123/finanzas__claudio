@@ -1,3 +1,4 @@
+from app.models.alerts import Alert, AlertCondition
 from app.models.market import DividendEvent, FxRate, Fundamentals, Price
 from app.models.portfolio import Asset, Portfolio, Transaction
 from app.models.strategy import Goal, HoldingTag, Tag
@@ -16,4 +17,6 @@ __all__ = [
     "Tag",
     "HoldingTag",
     "Goal",
+    "Alert",
+    "AlertCondition",
 ]

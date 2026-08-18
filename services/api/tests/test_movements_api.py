@@ -25,6 +25,9 @@ class FakeProvider(Provider):
     def search(self, query: str):
         return []
 
+    def get_price_on(self, symbol: str, on: date) -> QuoteResult | None:
+        return None
+
 
 def _register_and_login(client) -> str:
     resp = client.post("/v1/auth/register", json={"email": "movements-test@example.com", "password": "SuperSecret123!"})

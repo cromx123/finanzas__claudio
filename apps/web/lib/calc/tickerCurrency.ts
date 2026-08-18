@@ -4,7 +4,7 @@ import type { Currency } from "../types";
 // rule #1) so the "Agregar transacción" form can show/validate the asset's
 // real currency without a round trip — the backend re-validates regardless.
 const US_TICKER_RE = /^[A-Z][A-Z0-9-]{0,9}$/;
-const SUFFIX_TO_CURRENCY: Record<string, Currency> = { ".SN": "CLP", ".MC": "EUR" };
+const SUFFIX_TO_CURRENCY: Record<string, Currency> = { ".SN": "CLP", ".MC": "EUR", ".T": "JPY" };
 
 /** Returns the ticker's listing currency, or null if the symbol isn't recognized yet. */
 export function resolveTickerCurrency(rawSymbol: string): Currency | null {

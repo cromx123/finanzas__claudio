@@ -56,6 +56,20 @@ export interface ApiPortfolioSummary {
   gp_no_realizada: number;
   dividendo_anual_bruto: number;
   dividendo_anual_neto: number;
+  dividendos_cobrados_bruto: number;
+  dividendos_cobrados_neto: number;
+}
+
+export interface ApiPerformancePoint {
+  date: string;
+  cartera_value: number;
+  benchmark_index: number | null;
+}
+
+export interface ApiPortfolioPerformance {
+  start_date: string;
+  currency: string;
+  points: ApiPerformancePoint[];
 }
 
 export interface ApiScreenerAsset {
@@ -84,6 +98,17 @@ export interface ApiScreenerAsset {
   return_3y: number | null;
   return_5y: number | null;
   dividend_frequency: string | null;
+}
+
+export interface ApiAssetSearchResult {
+  symbol: string;
+  name: string;
+  exchange: string | null;
+}
+
+export interface ApiPriceOnDate {
+  date: string;
+  price: number;
 }
 
 export interface ApiAssetDetail {
@@ -133,6 +158,11 @@ export interface ApiGoal {
   target_date: string | null;
 }
 
+export interface ApiHoldingContribution {
+  yahoo_symbol: string;
+  valor_nativo: number;
+}
+
 export interface ApiPortfolioContribution {
   id: string;
   name: string;
@@ -140,6 +170,7 @@ export interface ApiPortfolioContribution {
   valor_nativo: number;
   valor_convertido: number;
   dividendo_mensual_convertido: number;
+  holdings: ApiHoldingContribution[];
 }
 
 export interface ApiGoalsProgress {
@@ -156,6 +187,19 @@ export interface ApiGoalsProgress {
 export interface ApiCountryAllocation {
   currency: string;
   rows: { country: string; value: number }[];
+}
+
+export type AlertCondition = "price_below" | "price_above";
+
+export interface ApiAlert {
+  id: string;
+  asset: ApiAsset;
+  condition: AlertCondition;
+  threshold: number;
+  active: boolean;
+  triggered_at: string | null;
+  created_at: string;
+  current_price: number | null;
 }
 
 export interface ApiFxRateDetail {

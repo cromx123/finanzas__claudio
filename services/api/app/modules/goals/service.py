@@ -7,7 +7,7 @@ from app.models.strategy import Goal, GoalKind
 from app.models.user import User
 from app.modules.fx import service as fx_service
 from app.modules.portfolios import service as portfolios_service
-from app.schemas.goals import FiStep, GoalIn, GoalsProgressOut, PortfolioContribution
+from app.schemas.goals import FiStep, GoalIn, GoalsProgressOut, HoldingContribution, PortfolioContribution
 
 _FI_HITOS_USD = [25_000.0, 50_000.0, 100_000.0, 250_000.0]
 
@@ -55,6 +55,10 @@ def compute_progress(db: Session, user: User, display_currency: str) -> GoalsPro
                 valor_nativo=summary.valor_total,
                 valor_convertido=valor_convertido,
                 dividendo_mensual_convertido=div_mensual_convertido,
+                holdings=[
+                    HoldingContribution(yahoo_symbol=h.asset.yahoo_symbol, valor_nativo=h.market_value)
+                    for h in summary.holdings
+                ],
             )
         )
 

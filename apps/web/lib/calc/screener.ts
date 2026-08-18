@@ -1,4 +1,4 @@
-import { formatCurrency, formatDecimal, formatPercent } from "../format";
+import { formatCurrency, formatDecimal, formatPercent, truncate } from "../format";
 import type { ApiScreenerAsset } from "../api/types";
 import type { Currency } from "../types";
 
@@ -41,7 +41,11 @@ export function formatAssetPrice(a: ApiScreenerAsset): string {
 
 export function formatAumOrCap(value: number | null): string {
   if (value === null) return "—";
-  return (value >= 1e12 ? (value / 1e12).toFixed(2).replace(".", ",") + "T" : (value / 1e9).toFixed(1).replace(".", ",") + "B") + " US$";
+  return (
+    (value >= 1e12
+      ? truncate(value / 1e12, 2).toFixed(2).replace(".", ",") + "T"
+      : truncate(value / 1e9, 1).toFixed(1).replace(".", ",") + "B") + " US$"
+  );
 }
 
 export interface DetailCell {
