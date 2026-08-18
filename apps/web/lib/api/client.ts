@@ -37,8 +37,6 @@ export const setHoldingTags = (portfolioId: string, assetId: string, tags: strin
 
 // FX rates
 export const getFxRates = () => api.get<Record<string, number>>("/v1/fx-rates");
-export const setFxRate = (currency: string, rate_to_clp: number) =>
-  api.put<Record<string, number>>("/v1/fx-rates", { currency, rate_to_clp });
 
 // Tags
 export const listTags = () => api.get<string[]>("/v1/tags");

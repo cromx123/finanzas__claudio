@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
-import { Input } from "../../components/ui/Input";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
-import { useFxRates, useGoalsProgress, useSetFxRate } from "../../hooks/useApi";
+import { useFxRates, useGoalsProgress } from "../../hooks/useApi";
 import { formatCurrency, formatPercent } from "../../lib/format";
 import type { Currency } from "../../lib/types";
 
@@ -20,7 +19,6 @@ export default function PerfilPage() {
   const [displayCcy, setDisplayCcy] = useState<Currency>("CLP");
   const { data: progress } = useGoalsProgress(displayCcy);
   const { data: fxRates } = useFxRates();
-  const setFxRate = useSetFxRate();
 
   return (
     <>
@@ -77,32 +75,26 @@ export default function PerfilPage() {
 
         <div className="mt-11">
           <h6 className="m-0 mb-1 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Tipo de cambio</h6>
-          <p className="text-muted text-[11.5px] mb-3">Cuántos CLP vale 1 unidad de cada moneda — ajústalo si difiere del real.</p>
+          <p className="text-muted text-[11.5px] mb-3">
+            Cuántos CLP vale 1 unidad de cada moneda — se obtiene automáticamente de Yahoo Finance cada vez que abres la app.
+          </p>
           <div className="flex gap-6 flex-wrap">
-            <Input
-              label="1 USD = ? CLP"
-              type="number"
-              defaultValue={fxRates?.USD}
-              onBlur={(e) => {
-                const v = parseFloat(e.target.value);
-                if (v > 0) setFxRate.mutate({ currency: "USD", rate: v });
-              }}
-              className="w-[140px]"
-            />
-            <Input
-              label="1 EUR = ? CLP"
-              type="number"
-              defaultValue={fxRates?.EUR}
-              onBlur={(e) => {
-                const v = parseFloat(e.target.value);
-                if (v > 0) setFxRate.mutate({ currency: "EUR", rate: v });
-              }}
-              className="w-[140px]"
-            />
+            <div className="field">
+              <span className="block text-xs mb-1 text-ink/70">1 USD = ? CLP</span>
+              <div className="w-[140px] min-h-9 px-2.5 py-1.5 text-sm text-ink bg-ink/[0.04] border border-divider flex items-center">
+                {fxRates ? formatCurrency(fxRates.USD, "CLP", 2) : "—"}
+              </div>
+            </div>
+            <div className="field">
+              <span className="block text-xs mb-1 text-ink/70">1 EUR = ? CLP</span>
+              <div className="w-[140px] min-h-9 px-2.5 py-1.5 text-sm text-ink bg-ink/[0.04] border border-divider flex items-center">
+                {fxRates ? formatCurrency(fxRates.EUR, "CLP", 2) : "—"}
+              </div>
+            </div>
           </div>
         </div>
 
-        <PageFooter moduleLabel="PERFIL" right={<>Conversión con el tipo de cambio de arriba · no es asesoría financiera</>} />
+        <PageFooter moduleLabel="PERFIL" right={<>Conversión con el tipo de cambio de Yahoo Finance · no es asesoría financiera</>} />
       </PageContainer>
     </>
   );

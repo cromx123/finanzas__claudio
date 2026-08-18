@@ -98,17 +98,6 @@ export function useFxRates() {
   return useQuery({ queryKey: ["fx-rates"], queryFn: client.getFxRates, ...staticQuery });
 }
 
-export function useSetFxRate() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ currency, rate }: { currency: string; rate: number }) => client.setFxRate(currency, rate),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["fx-rates"] });
-      qc.invalidateQueries({ queryKey: ["goals-progress"] });
-    },
-  });
-}
-
 // Tags
 export function useTags() {
   return useQuery({ queryKey: ["tags"], queryFn: client.listTags, ...staticQuery });
