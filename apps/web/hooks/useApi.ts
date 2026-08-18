@@ -106,39 +106,6 @@ export function useFxRates() {
   return useQuery({ queryKey: ["fx-rates"], queryFn: client.getFxRates, ...staticQuery });
 }
 
-<<<<<<< HEAD
-=======
-export function useFxRateDetails() {
-  return useQuery({ queryKey: ["fx-rate-details"], queryFn: client.getFxRateDetails, ...staticQuery });
-}
-
-function useInvalidateFxRates() {
-  const qc = useQueryClient();
-  return () => {
-    qc.invalidateQueries({ queryKey: ["fx-rates"] });
-    qc.invalidateQueries({ queryKey: ["fx-rate-details"] });
-    qc.invalidateQueries({ queryKey: ["goals-progress"] });
-    qc.invalidateQueries({ queryKey: ["country-allocation"] });
-  };
-}
-
-export function useSetFxRate() {
-  const invalidate = useInvalidateFxRates();
-  return useMutation({
-    mutationFn: ({ currency, rate }: { currency: string; rate: number }) => client.setFxRate(currency, rate),
-    onSuccess: invalidate,
-  });
-}
-
-export function useRefreshFxRates() {
-  const invalidate = useInvalidateFxRates();
-  return useMutation({
-    mutationFn: client.refreshFxRates,
-    onSuccess: invalidate,
-  });
-}
-
->>>>>>> 04db525f5931bacb8cbb0543958cc0e1c0cd14ee
 // Tags
 export function useTags() {
   return useQuery({ queryKey: ["tags"], queryFn: client.listTags, ...staticQuery });
