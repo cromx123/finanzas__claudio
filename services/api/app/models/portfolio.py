@@ -34,7 +34,13 @@ class Portfolio(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
 
-    transactions: Mapped[list["Transaction"]] = relationship(back_populates="portfolio")
+    # passive_deletes=True: let the DB's ON DELETE CASCADE (see Transaction.
+    # portfolio_id below) remove child transactions directly. Without it,
+    # SQLAlchemy's default delete handling tries to UPDATE each transaction's
+    # portfolio_id to NULL before deleting the portfolio — which fails,
+    # since that column is NOT NULL, turning "delete portfolio" into a 500
+    # for any portfolio that has transactions.
+    transactions: Mapped[list["Transaction"]] = relationship(back_populates="portfolio", passive_deletes=True)
 
 
 class Asset(Base):
@@ -75,6 +81,27 @@ class Transaction(Base):
     fx_rate: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
     tax_withheld: Mapped[float] = mapped_column(Numeric(18, 6), default=0, server_default="0")
     is_drip: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Only meaningful for BUY rows: how much of this lot hasn't been consumed
+    # by a sell yet (see TransactionLotAllocation). NULL for SELL rows.
+    remaining_quantity: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
 
     portfolio: Mapped[Portfolio] = relationship(back_populates="transactions")
     asset: Mapped[Asset | None] = relationship()
+
+
+class TransactionLotAllocation(Base):
+    """Records which BUY lot(s) a SELL consumed, and how much — the source of
+    truth for tax-lot cost basis (FIFO/LIFO/specific), replacing the old
+    single blended average-cost calculation.
+    """
+
+    __tablename__ = "transaction_lot_allocations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    sell_transaction_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("transactions.id", ondelete="CASCADE"))
+    buy_transaction_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("transactions.id", ondelete="CASCADE"))
+    quantity: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
+    cost_basis: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
+
+    sell_transaction: Mapped[Transaction] = relationship(foreign_keys=[sell_transaction_id])
+    buy_transaction: Mapped[Transaction] = relationship(foreign_keys=[buy_transaction_id])

@@ -75,7 +75,17 @@ function useInvalidatePortfolio(portfolioId: string) {
     qc.invalidateQueries({ queryKey: ["portfolio-summary", portfolioId] });
     qc.invalidateQueries({ queryKey: ["transactions", portfolioId] });
     qc.invalidateQueries({ queryKey: ["portfolio-performance", portfolioId] });
+    qc.invalidateQueries({ queryKey: ["lots", portfolioId] });
   };
+}
+
+export function useOpenLots(portfolioId: string | null, yahooSymbol: string | null) {
+  return useQuery({
+    queryKey: ["lots", portfolioId, yahooSymbol],
+    queryFn: () => client.getOpenLots(portfolioId as string, yahooSymbol as string),
+    enabled: !!portfolioId && !!yahooSymbol,
+    staleTime: 10_000,
+  });
 }
 
 export function useAddTransaction(portfolioId: string) {
@@ -252,6 +262,15 @@ export function useDividendCalendar(portfolioId: string | null, year: number) {
 // Movements
 export function useMovements() {
   return useQuery({ queryKey: ["movements"], queryFn: client.getMovements, staleTime: 30_000 });
+}
+
+// Net worth
+export function useNetWorthHistory(currency: string, range: string) {
+  return useQuery({
+    queryKey: ["networth-history", currency, range],
+    queryFn: () => client.getNetWorthHistory(currency, range),
+    staleTime: 5 * 60_000,
+  });
 }
 
 // Alerts

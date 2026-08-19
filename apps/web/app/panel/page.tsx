@@ -406,6 +406,7 @@ export default function PanelPage() {
 
       {showAddModal && portfolioId && (
         <AddTransactionModal
+          portfolioId={portfolioId}
           ccy={moneda}
           maxVenta={(symbol) =>
             summary.holdings.find((h) => h.asset.yahoo_symbol === symbol.toUpperCase())?.quantity ?? 0

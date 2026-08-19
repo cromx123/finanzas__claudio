@@ -217,6 +217,259 @@ def test_update_transaction_cannot_oversell(client, monkeypatch):
     assert resp.json()["price"] == 95.0
 
 
+def test_sell_consumes_lots_fifo_for_realized_pl(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Global Dividendos", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    # Two lots at different prices — a blended-average calc would give a
+    # different (wrong) realized P&L than FIFO does.
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-01-01", "quantity": 10, "price": 50.0},
+        headers=_auth(token),
+    )
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-02-01", "quantity": 10, "price": 70.0},
+        headers=_auth(token),
+    )
+    # Sell 15: FIFO consumes all 10 of the $50 lot + 5 of the $70 lot.
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "sell", "trade_date": "2026-03-01", "quantity": 15, "price": 100.0},
+        headers=_auth(token),
+    )
+
+    summary = client.get(f"/v1/portfolios/{portfolio_id}/summary", headers=_auth(token)).json()
+    # FIFO: (100-50)*10 + (100-70)*5 = 500 + 150 = 650.
+    # A blended-average calc would have given (100 - 60)*15 = 600 instead.
+    assert summary["gp_realizada"] == 650.0
+    # 5 shares left, all from the second ($70) lot.
+    assert summary["holdings"][0]["quantity"] == 5
+    assert summary["holdings"][0]["avg_cost"] == 70.0
+
+
+def test_list_open_lots(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Global Dividendos", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-01-01", "quantity": 10, "price": 50.0},
+        headers=_auth(token),
+    )
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-02-01", "quantity": 10, "price": 70.0},
+        headers=_auth(token),
+    )
+
+    resp = client.get(f"/v1/portfolios/{portfolio_id}/lots?yahoo_symbol=SCHD", headers=_auth(token))
+    assert resp.status_code == 200
+    lots = resp.json()
+    assert len(lots) == 2
+    assert [l["price"] for l in lots] == [50.0, 70.0]
+    assert [l["quantity"] for l in lots] == [10.0, 10.0]
+
+    # Unknown ticker -> no lots, not an error.
+    assert client.get(f"/v1/portfolios/{portfolio_id}/lots?yahoo_symbol=NOPE", headers=_auth(token)).json() == []
+
+
+def test_sell_with_lifo_strategy_consumes_newest_lot_first(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Global Dividendos", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-01-01", "quantity": 10, "price": 50.0},
+        headers=_auth(token),
+    )
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-02-01", "quantity": 10, "price": 70.0},
+        headers=_auth(token),
+    )
+    # LIFO: sell 5 consumes from the newest ($70) lot, not the oldest.
+    resp = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={
+            "yahoo_symbol": "SCHD",
+            "type": "sell",
+            "trade_date": "2026-03-01",
+            "quantity": 5,
+            "price": 100.0,
+            "lot_strategy": "lifo",
+        },
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
+
+    summary = client.get(f"/v1/portfolios/{portfolio_id}/summary", headers=_auth(token)).json()
+    # (100-70)*5 = 150, not (100-50)*5 = 250 which FIFO would have given.
+    assert summary["gp_realizada"] == 150.0
+    # 15 left: all 10 of the $50 lot + 5 remaining of the $70 lot.
+    assert summary["holdings"][0]["quantity"] == 15
+
+
+def test_sell_with_specific_lot_selection(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Global Dividendos", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    buy1 = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-01-01", "quantity": 10, "price": 50.0},
+        headers=_auth(token),
+    ).json()
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-02-01", "quantity": 10, "price": 70.0},
+        headers=_auth(token),
+    )
+
+    # Explicitly pick 4 shares from the (older, cheaper) first lot, even
+    # though FIFO/LIFO would have chosen differently by default.
+    resp = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={
+            "yahoo_symbol": "SCHD",
+            "type": "sell",
+            "trade_date": "2026-03-01",
+            "quantity": 4,
+            "price": 100.0,
+            "lot_strategy": "specific",
+            "lots": {buy1["id"]: 4},
+        },
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
+
+    summary = client.get(f"/v1/portfolios/{portfolio_id}/summary", headers=_auth(token)).json()
+    assert summary["gp_realizada"] == (100 - 50) * 4
+
+    lots = client.get(f"/v1/portfolios/{portfolio_id}/lots?yahoo_symbol=SCHD", headers=_auth(token)).json()
+    by_price = {l["price"]: l["quantity"] for l in lots}
+    assert by_price[50.0] == 6  # 10 - 4
+    assert by_price[70.0] == 10  # untouched
+
+
+def test_sell_with_specific_lots_must_sum_to_quantity(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Global Dividendos", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    buy = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-01-01", "quantity": 10, "price": 50.0},
+        headers=_auth(token),
+    ).json()
+
+    resp = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={
+            "yahoo_symbol": "SCHD",
+            "type": "sell",
+            "trade_date": "2026-02-01",
+            "quantity": 5,
+            "price": 100.0,
+            "lot_strategy": "specific",
+            "lots": {buy["id"]: 3},  # only 3, but selling 5
+        },
+        headers=_auth(token),
+    )
+    assert resp.status_code == 409
+
+
+def test_cannot_shrink_buy_below_what_was_already_sold(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Global Dividendos", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    buy = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-01-01", "quantity": 100, "price": 50.0},
+        headers=_auth(token),
+    )
+    buy_id = buy.json()["id"]
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "sell", "trade_date": "2026-02-01", "quantity": 60, "price": 90.0},
+        headers=_auth(token),
+    )
+
+    # 60 of the 100 are already sold — can't shrink the buy below that.
+    resp = client.patch(
+        f"/v1/portfolios/{portfolio_id}/transactions/{buy_id}",
+        json={"trade_date": "2026-01-01", "quantity": 50, "price": 50.0},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 409
+
+    # Fixing the price (not shrinking below 60) is fine.
+    resp = client.patch(
+        f"/v1/portfolios/{portfolio_id}/transactions/{buy_id}",
+        json={"trade_date": "2026-01-01", "quantity": 100, "price": 55.0},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+
+
+def test_cannot_delete_buy_that_has_been_sold_from(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Global Dividendos", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    buy = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-01-01", "quantity": 100, "price": 50.0},
+        headers=_auth(token),
+    )
+    buy_id = buy.json()["id"]
+    sell = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "sell", "trade_date": "2026-02-01", "quantity": 40, "price": 90.0},
+        headers=_auth(token),
+    )
+    sell_id = sell.json()["id"]
+
+    resp = client.delete(f"/v1/portfolios/{portfolio_id}/transactions/{buy_id}", headers=_auth(token))
+    assert resp.status_code == 409
+
+    # Deleting the dependent sell first frees the lot up again.
+    assert client.delete(f"/v1/portfolios/{portfolio_id}/transactions/{sell_id}", headers=_auth(token)).status_code == 204
+    assert client.delete(f"/v1/portfolios/{portfolio_id}/transactions/{buy_id}", headers=_auth(token)).status_code == 204
+
+
+def test_delete_portfolio_with_transactions(client, monkeypatch):
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Global Dividendos", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "SCHD", "type": "buy", "trade_date": "2026-01-01", "quantity": 10, "price": 50.0},
+        headers=_auth(token),
+    )
+
+    # A portfolio with transactions used to 500 here — the ORM tried to
+    # null out each transaction's (NOT NULL) portfolio_id instead of
+    # letting the DB's ON DELETE CASCADE remove them.
+    resp = client.delete(f"/v1/portfolios/{portfolio_id}", headers=_auth(token))
+    assert resp.status_code == 204
+    assert client.get("/v1/portfolios", headers=_auth(token)).json() == []
+
+
 def test_portfolio_scoped_to_owner(client, monkeypatch):
     monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
     token_a = _register_and_login(client)

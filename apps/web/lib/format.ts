@@ -46,6 +46,12 @@ export function formatDecimal(value: number, digits = 1): string {
   return truncate(value, digits).toFixed(digits).replace(".", ",");
 }
 
+/** "2026-08-19" -> "19-08-2026" — shared by every page that shows an
+ * as-of/triggered-on date from the API. */
+export function formatDateEs(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 export function formatCompactUsd(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1e6) return "US$" + truncate(value / 1e6, 2).toFixed(2).replace(".", ",") + "M";

@@ -76,3 +76,29 @@ def test_manual_override_beats_yahoo_until_refreshed_again(client, monkeypatch):
     detail = client.get("/v1/fx-rates/detail", headers=_auth(token)).json()
     assert detail["USD"]["source"] == "yahoo"
     assert detail["USD"]["rate"] == 950.0
+
+
+def test_get_rate_on_date_looks_up_asof_not_latest(db_session):
+    from app.models.market import FxRate
+    from app.modules.fx.service import get_rate_on_date, get_rates_on_dates
+
+    db_session.add_all(
+        [
+            FxRate(base="USD", quote="CLP", date=date(2026, 1, 1), rate=800.0, source="yahoo"),
+            FxRate(base="USD", quote="CLP", date=date(2026, 6, 1), rate=900.0, source="yahoo"),
+            FxRate(base="USD", quote="CLP", date=date(2026, 8, 1), rate=950.0, source="yahoo"),
+        ]
+    )
+    db_session.commit()
+
+    assert get_rate_on_date(db_session, "USD", date(2026, 6, 1)) == 900.0  # exact match
+    assert get_rate_on_date(db_session, "USD", date(2026, 7, 15)) == 900.0  # between two known dates
+    assert get_rate_on_date(db_session, "USD", date(2026, 12, 1)) == 950.0  # after the last known date
+    # Before the first known date: falls back to the earliest known rate,
+    # never fabricates history further back than what was actually ingested.
+    assert get_rate_on_date(db_session, "USD", date(2025, 1, 1)) == 800.0
+    assert get_rate_on_date(db_session, "EUR", date(2026, 1, 1)) == 1050.0  # no history at all -> seed default
+    assert get_rate_on_date(db_session, "CLP", date(2020, 1, 1)) == 1.0  # CLP is always 1, any date
+
+    batch = get_rates_on_dates(db_session, "USD", [date(2026, 1, 1), date(2026, 6, 1), date(2026, 12, 1)])
+    assert batch == {date(2026, 1, 1): 800.0, date(2026, 6, 1): 900.0, date(2026, 12, 1): 950.0}

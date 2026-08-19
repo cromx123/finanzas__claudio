@@ -1,5 +1,6 @@
 import { api } from "./http";
 import type {
+  AlertCondition,
   ApiAlert,
   ApiAssetDetail,
   ApiAssetSearchResult,
@@ -9,7 +10,9 @@ import type {
   ApiFxRateDetail,
   ApiGoal,
   ApiGoalsProgress,
+  ApiLot,
   ApiMovement,
+  ApiNetWorthHistory,
   ApiPortfolio,
   ApiPortfolioPerformance,
   ApiPortfolioSummary,
@@ -35,8 +38,18 @@ export const listTransactions = (portfolioId: string) =>
   api.get<ApiTransaction[]>(`/v1/portfolios/${portfolioId}/transactions`);
 export const addTransaction = (
   portfolioId: string,
-  input: { yahoo_symbol: string; type: "buy" | "sell"; trade_date: string; quantity: number; price: number }
+  input: {
+    yahoo_symbol: string;
+    type: "buy" | "sell";
+    trade_date: string;
+    quantity: number;
+    price: number;
+    lot_strategy?: "fifo" | "lifo" | "specific";
+    lots?: Record<string, number>;
+  }
 ) => api.post<ApiTransaction>(`/v1/portfolios/${portfolioId}/transactions`, input);
+export const getOpenLots = (portfolioId: string, yahooSymbol: string) =>
+  api.get<ApiLot[]>(`/v1/portfolios/${portfolioId}/lots?yahoo_symbol=${encodeURIComponent(yahooSymbol)}`);
 export const updateTransaction = (
   portfolioId: string,
   transactionId: string,
@@ -87,8 +100,16 @@ export const getDividendCalendar = (portfolioId: string, year: number) =>
 // Movements
 export const getMovements = () => api.get<ApiMovement[]>("/v1/movements");
 
+// Net worth
+export const getNetWorthHistory = (currency: string, range: string) =>
+  api.get<ApiNetWorthHistory>(`/v1/networth/history?currency=${currency}&range=${range}`);
+
 // Alerts
 export const listAlerts = () => api.get<ApiAlert[]>("/v1/alerts");
-export const createAlert = (input: { yahoo_symbol: string; condition: "price_below" | "price_above"; threshold: number }) =>
-  api.post<ApiAlert>("/v1/alerts", input);
+export const createAlert = (input: {
+  yahoo_symbol: string;
+  condition: AlertCondition;
+  threshold?: number;
+  params?: Record<string, number>;
+}) => api.post<ApiAlert>("/v1/alerts", input);
 export const deleteAlert = (id: string) => api.delete<void>(`/v1/alerts/${id}`);

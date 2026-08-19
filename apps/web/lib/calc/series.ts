@@ -17,6 +17,12 @@ function monthLabel(isoDate: string): string {
   return `${MES[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
 }
 
+/** Day+month for short (daily-sampled) ranges, month+year otherwise — shared
+ * by every chart that samples points the same way the performance chart does. */
+export function dateLabel(isoDate: string, range: RangeKey): string {
+  return (DAILY_SAMPLED_RANGES.has(range) ? dayLabel : monthLabel)(isoDate);
+}
+
 /**
  * Rebases the portfolio's real value series and the S&P 500's real index
  * level series to 100 at the first point each has data for — the two use
@@ -26,12 +32,11 @@ function monthLabel(isoDate: string): string {
 export function buildPerformancePoints(points: ApiPerformancePoint[], range: RangeKey): PerformancePoint[] {
   const carteraBase = points.find((p) => p.cartera_value > 0)?.cartera_value ?? null;
   const benchmarkBase = points.find((p) => (p.benchmark_index ?? 0) > 0)?.benchmark_index ?? null;
-  const label = DAILY_SAMPLED_RANGES.has(range) ? dayLabel : monthLabel;
 
   return points.map((p, i) => ({
     index: i,
     cartera: carteraBase ? (p.cartera_value / carteraBase) * 100 : 0,
     benchmark: benchmarkBase && p.benchmark_index !== null ? (p.benchmark_index / benchmarkBase) * 100 : null,
-    label: label(p.date),
+    label: dateLabel(p.date, range),
   }));
 }

@@ -31,6 +31,13 @@ export interface ApiTransaction {
   currency: string;
 }
 
+export interface ApiLot {
+  id: string;
+  trade_date: string;
+  quantity: number;
+  price: number;
+}
+
 export interface ApiHolding {
   asset: ApiAsset;
   tags: string[];
@@ -189,17 +196,36 @@ export interface ApiCountryAllocation {
   rows: { country: string; value: number }[];
 }
 
-export type AlertCondition = "price_below" | "price_above";
+export interface ApiNetWorthPoint {
+  date: string;
+  value: number;
+}
+
+export interface ApiNetWorthHistory {
+  currency: string;
+  start_date: string;
+  points: ApiNetWorthPoint[];
+}
+
+export type AlertCondition =
+  | "price_below"
+  | "price_above"
+  | "rsi_below"
+  | "rsi_above"
+  | "bollinger_lower_cross"
+  | "bollinger_upper_cross";
 
 export interface ApiAlert {
   id: string;
   asset: ApiAsset;
   condition: AlertCondition;
-  threshold: number;
+  threshold: number | null;
+  params: Record<string, number>;
   active: boolean;
   triggered_at: string | null;
   created_at: string;
   current_price: number | null;
+  current_value: number | null;
 }
 
 export interface ApiFxRateDetail {

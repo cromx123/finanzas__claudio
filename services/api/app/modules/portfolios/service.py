@@ -8,15 +8,17 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.models.market import DividendEvent, Fundamentals, Price
-from app.models.portfolio import Asset, Portfolio, Transaction, TransactionType
+from app.models.portfolio import Asset, Portfolio, Transaction, TransactionLotAllocation, TransactionType
 from app.models.strategy import HoldingTag, Tag
 from app.models.user import User, UserTaxRule
 from app.modules.assets.service import get_or_create_asset, ingest_full_asset, latest_price, refresh_quote
 from app.modules.fx import service as fx_service
 from app.modules.ingestion.providers.base import Provider
+from app.modules.portfolios import lots as lots_service
+from app.modules.portfolios.lots import InsufficientQuantityError, LotAllocationError
 from app.schemas.portfolios import (
     CountryAllocationOut,
     CountryAllocationRow,
@@ -48,10 +50,6 @@ def withholding_for_country(db: Session, user: User, country_code: str) -> float
 
 
 class PortfolioNotFoundError(Exception):
-    pass
-
-
-class InsufficientQuantityError(Exception):
     pass
 
 
@@ -90,25 +88,6 @@ def delete_portfolio(db: Session, portfolio: Portfolio) -> None:
     db.commit()
 
 
-def current_quantity(
-    db: Session, portfolio_id: uuid.UUID, asset_id: uuid.UUID, exclude_transaction_id: uuid.UUID | None = None
-) -> float:
-    rows = db.scalars(
-        select(Transaction)
-        .where(Transaction.portfolio_id == portfolio_id, Transaction.asset_id == asset_id)
-        .order_by(Transaction.trade_date)
-    )
-    qty = 0.0
-    for t in rows:
-        if exclude_transaction_id is not None and t.id == exclude_transaction_id:
-            continue
-        if t.type == TransactionType.BUY:
-            qty += float(t.quantity or 0)
-        elif t.type == TransactionType.SELL:
-            qty = max(0.0, qty - float(t.quantity or 0))
-    return qty
-
-
 def add_transaction(
     db: Session,
     provider: Provider,
@@ -118,6 +97,8 @@ def add_transaction(
     trade_date: date,
     quantity: float,
     price: float,
+    lot_strategy: str = "fifo",
+    lots: dict[uuid.UUID, float] | None = None,
 ) -> Transaction:
     asset = get_or_create_asset(db, provider, yahoo_symbol)
     if asset.currency != portfolio.currency:
@@ -140,11 +121,6 @@ def add_transaction(
             logger.warning("full ingestion failed for new asset %s, falling back to a live quote", asset.yahoo_symbol, exc_info=True)
             refresh_quote(db, provider, asset)
 
-    if tx_type == "sell":
-        owned = current_quantity(db, portfolio.id, asset.id)
-        if quantity > owned + 1e-6:
-            raise InsufficientQuantityError(f"only {owned} shares of {asset.yahoo_symbol} available")
-
     tx = Transaction(
         portfolio_id=portfolio.id,
         asset_id=asset.id,
@@ -155,11 +131,31 @@ def add_transaction(
         gross_amount=quantity * price,
         currency=portfolio.currency,
         fx_rate=1.0,
+        remaining_quantity=quantity if tx_type == "buy" else None,
     )
     db.add(tx)
+    db.flush()  # need tx.id before allocating lots against it
+    if tx_type == "sell":
+        try:
+            if lot_strategy == "lifo":
+                lots_service.allocate_lifo(db, tx)
+            elif lot_strategy == "specific":
+                lots_service.allocate_specific(db, tx, lots or {})
+            else:
+                lots_service.allocate_fifo(db, tx)
+        except InsufficientQuantityError:
+            db.rollback()
+            raise
     db.commit()
     db.refresh(tx)
     return tx
+
+
+def list_open_lots_by_symbol(db: Session, portfolio: Portfolio, yahoo_symbol: str) -> list[Transaction]:
+    asset = db.scalar(select(Asset).where(Asset.yahoo_symbol == yahoo_symbol.strip().upper()))
+    if asset is None:
+        return []
+    return lots_service.open_lots(db, portfolio.id, asset.id)
 
 
 def list_transactions(db: Session, portfolio: Portfolio) -> list[Transaction]:
@@ -176,6 +172,13 @@ def delete_transaction(db: Session, portfolio: Portfolio, transaction_id: uuid.U
     tx = db.get(Transaction, transaction_id)
     if tx is None or tx.portfolio_id != portfolio.id:
         return
+    if tx.type == TransactionType.SELL:
+        lots_service.reverse_allocations(db, tx.id)
+    elif tx.type == TransactionType.BUY and lots_service.allocated_quantity(tx) > 1e-6:
+        raise LotAllocationError(
+            f"no se puede eliminar — {lots_service.allocated_quantity(tx)} acciones de esta compra ya fueron "
+            "vendidas; elimina esa venta primero"
+        )
     db.delete(tx)
     db.commit()
 
@@ -186,20 +189,41 @@ def update_transaction(
     """Fixes a typo'd date/quantity/price on an existing transaction without
     the delete-and-re-add round trip — the asset and buy/sell type are fixed
     (changing either is really a different transaction, not a correction).
+
+    A SELL's lot allocations are reversed and re-run against the (possibly
+    changed) quantity. A BUY can't be shrunk below what's already been sold
+    out of it — editing its trade_date doesn't retroactively re-run FIFO for
+    sells that already consumed it, same as a real brokerage statement.
     """
     tx = db.get(Transaction, transaction_id)
     if tx is None or tx.portfolio_id != portfolio.id:
         raise TransactionNotFoundError(str(transaction_id))
 
     if tx.type == TransactionType.SELL:
-        owned = current_quantity(db, portfolio.id, tx.asset_id, exclude_transaction_id=tx.id)
-        if quantity > owned + 1e-6:
-            raise InsufficientQuantityError(f"only {owned} shares of {tx.asset.yahoo_symbol} available")
+        lots_service.reverse_allocations(db, tx.id)
+        db.flush()
+        tx.trade_date = trade_date
+        tx.quantity = quantity
+        tx.price = price
+        tx.gross_amount = quantity * price
+        db.flush()
+        try:
+            lots_service.allocate_fifo(db, tx)
+        except InsufficientQuantityError:
+            db.rollback()
+            raise
+    else:
+        allocated = lots_service.allocated_quantity(tx)
+        if quantity < allocated - 1e-6:
+            raise LotAllocationError(
+                f"no se puede reducir a {quantity} — ya se vendieron {allocated} acciones de este lote"
+            )
+        tx.trade_date = trade_date
+        tx.remaining_quantity = quantity - allocated
+        tx.quantity = quantity
+        tx.price = price
+        tx.gross_amount = quantity * price
 
-    tx.trade_date = trade_date
-    tx.quantity = quantity
-    tx.price = price
-    tx.gross_amount = quantity * price
     db.commit()
     db.refresh(tx)
     return tx
@@ -245,6 +269,13 @@ class _LedgerResult:
 
 
 def run_ledger(db: Session, portfolio_id: uuid.UUID) -> _LedgerResult:
+    """Holdings/cost-basis from open lot quantities, and realized P&L from
+    actual lot allocations — not a blended running average. A BUY's
+    remaining_quantity (updated by lots.allocate_*/reverse_allocations on
+    every sell/edit/delete) is always the current source of truth for what's
+    still held; TransactionLotAllocation is the source of truth for what was
+    sold against what, at what cost.
+    """
     txs = list(
         db.scalars(
             select(Transaction)
@@ -261,20 +292,26 @@ def run_ledger(db: Session, portfolio_id: uuid.UUID) -> _LedgerResult:
         qty = 0.0
         cost_total = 0.0
         for t in asset_txs:
-            if t.type == TransactionType.BUY:
-                qty += float(t.quantity or 0)
-                cost_total += float(t.gross_amount)
-                result.compras_totales += float(t.gross_amount)
-            elif t.type == TransactionType.SELL:
-                sold = min(float(t.quantity or 0), qty)
-                avg_cost = cost_total / qty if qty > 0 else 0
-                cost_sold = avg_cost * sold
-                result.gp_realizada += float(t.gross_amount) - cost_sold
-                qty = max(0.0, qty - sold)
-                cost_total = max(0.0, cost_total - cost_sold)
+            if t.type != TransactionType.BUY:
+                continue
+            qty += float(t.remaining_quantity or 0)
+            cost_total += float(t.remaining_quantity or 0) * float(t.price)
+            result.compras_totales += float(t.gross_amount)
         if qty > 1e-6:
             asset = db.get(Asset, asset_id)
             result.holdings[asset_id] = _AssetLot(asset=asset, quantity=qty, cost_total=cost_total)
+
+    BuyTx = aliased(Transaction)
+    SellTx = aliased(Transaction)
+    gp_rows = db.execute(
+        select(SellTx.price, BuyTx.price, TransactionLotAllocation.quantity)
+        .join(SellTx, TransactionLotAllocation.sell_transaction_id == SellTx.id)
+        .join(BuyTx, TransactionLotAllocation.buy_transaction_id == BuyTx.id)
+        .where(SellTx.portfolio_id == portfolio_id)
+    ).all()
+    for sell_price, buy_price, alloc_qty in gp_rows:
+        result.gp_realizada += (float(sell_price) - float(buy_price)) * float(alloc_qty)
+
     return result
 
 
@@ -459,41 +496,35 @@ def _daily_sample_dates(start: date, end: date) -> list[date]:
     return dates
 
 
-def get_portfolio_performance(
-    db: Session, provider: Provider, portfolio: Portfolio, range_key: str
-) -> PortfolioPerformanceOut:
-    """Real portfolio market value over time, alongside the S&P 500 for
-    comparison — both independently rebased to 100 by the frontend, so
-    absolute currency/units don't need to match.
-
-    The series always starts at the portfolio's earliest transaction date,
-    clamped to the requested range (1D/1W/1M/3M/1A/3A/5A) — never further
-    back than that range, but never fabricating history that predates the
-    first purchase either, even if a longer range was requested.
+def sample_dates_for_range(range_key: str, earliest: date, today: date) -> tuple[date, list[date]]:
+    """Resolves a UI range key ("1D".."5A") to (start_date, sample_dates),
+    clamped to `earliest` — shared between get_portfolio_performance and
+    the networth-history endpoint so the two never silently diverge on what
+    a given range means.
     """
-    today = date.today()
-    earliest = db.scalar(
-        select(func.min(Transaction.trade_date)).where(Transaction.portfolio_id == portfolio.id)
-    )
-    if earliest is None:
-        return PortfolioPerformanceOut(start_date=today, currency=portfolio.currency, points=[])
-
     if range_key in _PERFORMANCE_RANGE_DAYS:
         range_start = today - timedelta(days=_PERFORMANCE_RANGE_DAYS[range_key])
         start = max(earliest, range_start)
-        sample_dates = _daily_sample_dates(start, today)
-        benchmark_period = _BENCHMARK_PERIOD_FOR_SHORT_RANGE[range_key]
-    else:
-        years = _PERFORMANCE_RANGE_YEARS.get(range_key, 3)
-        range_start = _add_months(today, -12 * years)
-        start = max(earliest, range_start)
-        sample_dates = _monthly_sample_dates(start, today)
-        benchmark_period = f"{years}y"
+        return start, _daily_sample_dates(start, today)
+    years = _PERFORMANCE_RANGE_YEARS.get(range_key, 3)
+    range_start = _add_months(today, -12 * years)
+    start = max(earliest, range_start)
+    return start, _monthly_sample_dates(start, today)
 
+
+def portfolio_values_at_dates(db: Session, portfolio_id: uuid.UUID, sample_dates: list[date]) -> dict[date, float]:
+    """Portfolio market value (native currency) at each of `sample_dates`,
+    replaying BUY/SELL quantity changes chronologically and pricing each
+    held asset at-or-before that date. Shared by get_portfolio_performance
+    (single portfolio, own currency, plus a benchmark series) and
+    networth.compute_history (every portfolio, converted to one display
+    currency) — "what did I hold on date X, and what was it worth" belongs
+    in exactly one place.
+    """
     txs = list(
         db.scalars(
             select(Transaction)
-            .where(Transaction.portfolio_id == portfolio.id, Transaction.asset_id.is_not(None))
+            .where(Transaction.portfolio_id == portfolio_id, Transaction.asset_id.is_not(None))
             .order_by(Transaction.trade_date)
         )
     )
@@ -521,21 +552,7 @@ def get_portfolio_performance(
         idx = bisect_right(dates, on) - 1
         return closes[idx] if idx >= 0 else None
 
-    benchmark_dates: list[date] = []
-    benchmark_closes: list[float] = []
-    try:
-        history = provider.get_history(_BENCHMARK_SYMBOL, period=benchmark_period)
-        ordered_history = sorted(history, key=lambda q: q.date)
-        benchmark_dates = [q.date for q in ordered_history]
-        benchmark_closes = [q.close for q in ordered_history]
-    except Exception:
-        logger.warning("could not fetch %s benchmark history", _BENCHMARK_SYMBOL, exc_info=True)
-
-    def benchmark_at_or_before(on: date) -> float | None:
-        idx = bisect_right(benchmark_dates, on) - 1
-        return benchmark_closes[idx] if idx >= 0 else None
-
-    points: list[PerformancePointOut] = []
+    values: dict[date, float] = {}
     qty_by_asset: dict[uuid.UUID, float] = {}
     tx_idx = 0
     for d in sample_dates:
@@ -554,7 +571,54 @@ def get_portfolio_performance(
             price = price_at_or_before(asset_id, d)
             if price is not None:
                 value += qty * price
+        values[d] = value
 
-        points.append(PerformancePointOut(date=d, cartera_value=value, benchmark_index=benchmark_at_or_before(d)))
+    return values
 
+
+def get_portfolio_performance(
+    db: Session, provider: Provider, portfolio: Portfolio, range_key: str
+) -> PortfolioPerformanceOut:
+    """Real portfolio market value over time, alongside the S&P 500 for
+    comparison — both independently rebased to 100 by the frontend, so
+    absolute currency/units don't need to match.
+
+    The series always starts at the portfolio's earliest transaction date,
+    clamped to the requested range (1D/1W/1M/3M/1A/3A/5A) — never further
+    back than that range, but never fabricating history that predates the
+    first purchase either, even if a longer range was requested.
+    """
+    today = date.today()
+    earliest = db.scalar(
+        select(func.min(Transaction.trade_date)).where(Transaction.portfolio_id == portfolio.id)
+    )
+    if earliest is None:
+        return PortfolioPerformanceOut(start_date=today, currency=portfolio.currency, points=[])
+
+    start, sample_dates = sample_dates_for_range(range_key, earliest, today)
+    if range_key in _PERFORMANCE_RANGE_DAYS:
+        benchmark_period = _BENCHMARK_PERIOD_FOR_SHORT_RANGE[range_key]
+    else:
+        benchmark_period = f"{_PERFORMANCE_RANGE_YEARS.get(range_key, 3)}y"
+
+    values = portfolio_values_at_dates(db, portfolio.id, sample_dates)
+
+    benchmark_dates: list[date] = []
+    benchmark_closes: list[float] = []
+    try:
+        history = provider.get_history(_BENCHMARK_SYMBOL, period=benchmark_period)
+        ordered_history = sorted(history, key=lambda q: q.date)
+        benchmark_dates = [q.date for q in ordered_history]
+        benchmark_closes = [q.close for q in ordered_history]
+    except Exception:
+        logger.warning("could not fetch %s benchmark history", _BENCHMARK_SYMBOL, exc_info=True)
+
+    def benchmark_at_or_before(on: date) -> float | None:
+        idx = bisect_right(benchmark_dates, on) - 1
+        return benchmark_closes[idx] if idx >= 0 else None
+
+    points = [
+        PerformancePointOut(date=d, cartera_value=values[d], benchmark_index=benchmark_at_or_before(d))
+        for d in sample_dates
+    ]
     return PortfolioPerformanceOut(start_date=start, currency=portfolio.currency, points=points)

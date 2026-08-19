@@ -35,6 +35,20 @@ class TransactionIn(BaseModel):
     trade_date: date
     quantity: float = Field(gt=0)
     price: float = Field(gt=0)
+    # Only meaningful for a sell: which lot(s) to draw from. "specific"
+    # requires `lots` (transaction id -> quantity from that lot); ignored
+    # for a buy.
+    lot_strategy: str = Field(default="fifo", pattern="^(fifo|lifo|specific)$")
+    lots: dict[uuid.UUID, float] | None = None
+
+
+class LotOut(BaseModel):
+    id: uuid.UUID
+    trade_date: date
+    quantity: float
+    price: float
+
+    model_config = {"from_attributes": True}
 
 
 class TransactionUpdateIn(BaseModel):

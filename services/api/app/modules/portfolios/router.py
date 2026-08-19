@@ -14,6 +14,7 @@ from app.modules.portfolios import service
 from app.schemas.portfolios import (
     CountryAllocationOut,
     HoldingTagsIn,
+    LotOut,
     PortfolioIn,
     PortfolioOut,
     PortfolioPerformanceOut,
@@ -104,6 +105,18 @@ def list_transactions(
     return service.list_transactions(db, portfolio)
 
 
+@router.get("/{portfolio_id}/lots", response_model=list[LotOut])
+def list_open_lots(
+    portfolio_id: uuid.UUID,
+    yahoo_symbol: str = Query(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[LotOut]:
+    portfolio = _get_owned(db, user, portfolio_id)
+    lots = service.list_open_lots_by_symbol(db, portfolio, yahoo_symbol)
+    return [LotOut(id=t.id, trade_date=t.trade_date, quantity=float(t.remaining_quantity), price=float(t.price)) for t in lots]
+
+
 @router.post("/{portfolio_id}/transactions", response_model=TransactionOut, status_code=status.HTTP_201_CREATED)
 def add_transaction(
     portfolio_id: uuid.UUID,
@@ -123,6 +136,8 @@ def add_transaction(
             payload.trade_date,
             payload.quantity,
             payload.price,
+            payload.lot_strategy,
+            payload.lots,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
@@ -147,6 +162,8 @@ def update_transaction(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="transaction not found") from exc
     except service.InsufficientQuantityError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except service.LotAllocationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.delete("/{portfolio_id}/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -157,7 +174,10 @@ def delete_transaction(
     db: Session = Depends(get_db),
 ) -> None:
     portfolio = _get_owned(db, user, portfolio_id)
-    service.delete_transaction(db, portfolio, transaction_id)
+    try:
+        service.delete_transaction(db, portfolio, transaction_id)
+    except service.LotAllocationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.delete("/{portfolio_id}/holdings/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)

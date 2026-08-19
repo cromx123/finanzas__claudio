@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from bisect import bisect_right
 from datetime import date
 
 from sqlalchemy import select
@@ -74,6 +75,61 @@ def refresh_rates_from_yahoo(db: Session, provider: Provider) -> dict[str, float
         row.source = "yahoo"
     db.commit()
     return get_rates(db)
+
+
+def ingest_fx_history(db: Session, provider: Provider, period: str = "5y") -> None:
+    """One-time (or re-runnable) backfill of daily FX closes — same
+    dedupe-by-date pattern as assets.service.ingest_full_asset's price
+    ingestion. Needed so get_rate_on_date has real history to look up
+    instead of always falling back to today's rate.
+    """
+    for ccy, symbol in _YAHOO_FX_SYMBOLS.items():
+        try:
+            history = provider.get_history(symbol, period=period)
+        except Exception:
+            logger.warning("could not fetch fx history for %s", symbol, exc_info=True)
+            continue
+        deduped: dict[date, float] = {point.date: point.close for point in history}
+        for point_date, close in deduped.items():
+            row = db.get(FxRate, {"base": ccy, "quote": "CLP", "date": point_date})
+            if row is None:
+                row = FxRate(base=ccy, quote="CLP", date=point_date, source="yahoo")
+                db.add(row)
+            row.rate = close
+    db.commit()
+
+
+def get_rates_on_dates(db: Session, currency: str, dates: list[date]) -> dict[date, float]:
+    """Batch asof lookup — one query per currency instead of one per date,
+    same bisect-on-sorted-list pattern as portfolios.service's price lookup.
+    Falls back to the oldest known rate for a date before any history (never
+    fabricates a rate further back than what's actually been ingested), and
+    to DEFAULT_RATES if there's no history at all yet for that currency.
+    """
+    if currency == "CLP":
+        return {d: 1.0 for d in dates}
+
+    rows = db.execute(
+        select(FxRate.date, FxRate.rate)
+        .where(FxRate.base == currency, FxRate.quote == "CLP")
+        .order_by(FxRate.date)
+    ).all()
+    if not rows:
+        default = DEFAULT_RATES.get(currency, 1.0)
+        return {d: default for d in dates}
+
+    known_dates = [r.date for r in rows]
+    known_rates = [float(r.rate) for r in rows]
+
+    result: dict[date, float] = {}
+    for d in dates:
+        idx = bisect_right(known_dates, d) - 1
+        result[d] = known_rates[idx] if idx >= 0 else known_rates[0]
+    return result
+
+
+def get_rate_on_date(db: Session, currency: str, on: date) -> float:
+    return get_rates_on_dates(db, currency, [on])[on]
 
 
 def get_rate_details(db: Session) -> dict[str, dict[str, object]]:

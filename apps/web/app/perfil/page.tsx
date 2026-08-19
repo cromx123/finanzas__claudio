@@ -1,19 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
 import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
 import { AlertsPanel } from "../../components/perfil/AlertsPanel";
+import { NetWorthChart } from "../../components/perfil/NetWorthChart";
 import { WorldMap } from "../../components/perfil/WorldMap";
 import { Button } from "../../components/ui/Button";
 import { HelpButton } from "../../components/ui/HelpButton";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { ToggleButton } from "../../components/ui/ToggleButton";
-import { useAlerts, useCountryAllocation, useFxRateDetails, useGoalsProgress, useRefreshFxRates } from "../../hooks/useApi";
+import {
+  useAlerts,
+  useCountryAllocation,
+  useFxRateDetails,
+  useGoalsProgress,
+  useNetWorthHistory,
+  useRefreshFxRates,
+} from "../../hooks/useApi";
 import { toCategoricalSegments } from "../../lib/calc/categoricalColors";
-import { formatCurrency, formatPercent } from "../../lib/format";
-import type { Currency } from "../../lib/types";
+import { buildNetWorthPoints } from "../../lib/calc/networth";
+import { formatCurrency, formatDateEs, formatPercent } from "../../lib/format";
+import type { Currency, RangeKey } from "../../lib/types";
 
 type PerfilTab = "resumen" | "alertas";
 
@@ -22,17 +32,22 @@ const TAB_OPTIONS: { label: string; value: PerfilTab }[] = [
   { label: "Alertas", value: "alertas" },
 ];
 
+const RANGE_OPTIONS: { label: string; value: RangeKey }[] = [
+  { label: "1D", value: "1D" },
+  { label: "1W", value: "1W" },
+  { label: "1M", value: "1M" },
+  { label: "3M", value: "3M" },
+  { label: "1A", value: "1A" },
+  { label: "3A", value: "3A" },
+  { label: "5A", value: "5A" },
+];
+
 const SOURCE_LABEL: Record<string, string> = {
   yahoo: "Yahoo Finance",
   manual: "ajustado a mano",
   default: "valor por defecto",
   base: "moneda base",
 };
-
-function formatAsOf(asOf: string | null): string {
-  if (!asOf) return "";
-  return new Date(`${asOf}T00:00:00`).toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
 
 const CURRENCY_OPTIONS: { label: string; value: Currency }[] = [
   { label: "CLP", value: "CLP" },
@@ -45,11 +60,25 @@ export default function PerfilPage() {
   const [tab, setTab] = useState<PerfilTab>("resumen");
   const [displayCcy, setDisplayCcy] = useState<Currency>("CLP");
   const [multicolor, setMulticolor] = useState(false);
+  const [netWorthRange, setNetWorthRange] = useState<RangeKey>("3A");
+  const [netWorthHoverIndex, setNetWorthHoverIndex] = useState<number | null>(null);
   const { data: progress } = useGoalsProgress(displayCcy);
   const { data: countryAllocation } = useCountryAllocation(displayCcy);
   const { data: fxDetails } = useFxRateDetails();
   const { data: alerts, isLoading: loadingAlerts } = useAlerts();
+  const {
+    data: netWorthHistory,
+    isLoading: loadingNetWorth,
+    isFetching: fetchingNetWorth,
+    refetch: refetchNetWorth,
+  } = useNetWorthHistory(displayCcy, netWorthRange);
   const refreshFxRates = useRefreshFxRates();
+
+  const netWorthPoints = useMemo(
+    () => (netWorthHistory ? buildNetWorthPoints(netWorthHistory.points, netWorthRange) : []),
+    [netWorthHistory, netWorthRange]
+  );
+  const netWorthHoverPoint = netWorthHoverIndex !== null ? netWorthPoints[netWorthHoverIndex] : null;
 
   return (
     <>
@@ -157,6 +186,41 @@ export default function PerfilPage() {
             )}
 
             <div className="mt-11">
+              <div className="flex items-center gap-[18px] flex-wrap mb-3.5">
+                <h6 className="m-0 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Patrimonio en el tiempo</h6>
+                <span className="text-muted text-[11.5px] font-mono">
+                  {netWorthHoverPoint ? `${netWorthHoverPoint.label} · ${formatCurrency(netWorthHoverPoint.value, displayCcy)}` : ""}
+                </span>
+                <div className="ml-auto flex items-center gap-2.5">
+                  <SegmentedControl options={RANGE_OPTIONS} value={netWorthRange} onChange={setNetWorthRange} size="compact" />
+                  <button
+                    type="button"
+                    onClick={() => refetchNetWorth()}
+                    disabled={fetchingNetWorth}
+                    aria-label="Actualizar gráfico"
+                    title="Actualizar gráfico"
+                    className="text-ink/50 hover:text-accent disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw size={15} strokeWidth={1.8} className={fetchingNetWorth ? "animate-spin" : ""} />
+                  </button>
+                </div>
+              </div>
+              {loadingNetWorth ? (
+                <p className="text-muted text-sm py-16 text-center">Cargando historial…</p>
+              ) : netWorthPoints.length === 0 ? (
+                <p className="text-muted text-sm py-16 text-center">
+                  Todavía no hay suficiente historial de precios para graficar el patrimonio combinado.
+                </p>
+              ) : (
+                <NetWorthChart data={netWorthPoints} onHoverIndex={setNetWorthHoverIndex} />
+              )}
+              <p className="text-muted text-[11px] mt-1.5">
+                Valor real combinado de todos tus portafolios desde tu primera compra ({netWorthHistory?.start_date}) — cada punto
+                convertido con el tipo de cambio vigente en esa fecha, no el de hoy.
+              </p>
+            </div>
+
+            <div className="mt-11">
               <h6 className="m-0 mb-1 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Distribución geográfica</h6>
               <p className="text-muted text-[11.5px] mb-3">Suma de holdings de todos tus portafolios, por país del activo.</p>
               <WorldMap rows={countryAllocation?.rows ?? []} currency={displayCcy} />
@@ -189,7 +253,7 @@ export default function PerfilPage() {
                       {detail ? (
                         <div className="text-muted text-[10.5px] mt-1">
                           {SOURCE_LABEL[detail.source] ?? detail.source}
-                          {detail.as_of ? ` · ${formatAsOf(detail.as_of)}` : ""}
+                          {detail.as_of ? ` · ${formatDateEs(detail.as_of)}` : ""}
                         </div>
                       ) : null}
                     </div>
