@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict
 from datetime import date
 
@@ -95,24 +96,38 @@ def _pct(value: float | None) -> float | None:
     """yfinance returns most ratios as fractions (0.234) — this app stores
     percentages (23.4), matching the frontend's Intl percent formatting.
     """
+    v = _clean(value)
+    return None if v is None else v * 100
+
+
+def _clean(value) -> float | None:
+    """yfinance surfaces some missing fields as float NaN rather than None
+    (pandas' missing-value convention) instead of the plain None the rest of
+    this mapper expects. NaN is truthy in Python, so `nan and price` silently
+    passed and got stored — and Postgres numeric/float columns treat NaN as
+    greater than every real value for both comparisons and ORDER BY, which
+    broke the Screener's server-side filter/sort once it started comparing
+    these columns directly. Every raw yfinance numeric read funnels through
+    here so NaN is normalized to None before it ever reaches the DB.
+    """
     if value is None:
         return None
-    return float(value) * 100
+    v = float(value)
+    return None if math.isnan(v) else v
 
 
 def _num(value) -> float | None:
-    return float(value) if value is not None else None
+    return _clean(value)
 
 
 def _map_fundamentals(info: dict, price: float | None) -> dict:
-    div_rate = info.get("trailingAnnualDividendRate")
+    div_rate = _clean(info.get("trailingAnnualDividendRate"))
     div_yield_pct = (div_rate / price * 100) if (div_rate and price) else _pct(info.get("dividendYield"))
     # Some yfinance versions already return dividendYield as a percent (e.g. 2.9
     # instead of 0.029) — if our fraction-based guess landed absurdly high,
     # prefer the raw field taken at face value instead of re-scaling it.
     if div_yield_pct is not None and div_yield_pct > 50:
-        raw = info.get("dividendYield")
-        div_yield_pct = float(raw) if raw is not None else None
+        div_yield_pct = _clean(info.get("dividendYield"))
 
     # Unlike the other ratio fields, yfinance already reports expense ratio
     # as a percentage number (0.06 meaning "0.06%"), not a fraction.

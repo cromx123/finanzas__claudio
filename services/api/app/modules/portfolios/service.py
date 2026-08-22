@@ -10,13 +10,14 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
+from app.core.cache import cache_get_json, cache_set_json
 from app.models.market import DividendEvent, Fundamentals, Price
 from app.models.portfolio import Asset, Portfolio, Transaction, TransactionLotAllocation, TransactionType
 from app.models.strategy import HoldingTag, Tag
 from app.models.user import User, UserTaxRule
 from app.modules.assets.service import get_or_create_asset, ingest_full_asset, latest_price, refresh_quote
 from app.modules.fx import service as fx_service
-from app.modules.ingestion.providers.base import Provider
+from app.modules.ingestion.providers.base import Provider, QuoteResult
 from app.modules.portfolios import lots as lots_service
 from app.modules.portfolios.lots import InsufficientQuantityError, LotAllocationError
 from app.schemas.portfolios import (
@@ -26,6 +27,9 @@ from app.schemas.portfolios import (
     PerformancePointOut,
     PortfolioPerformanceOut,
     PortfolioSummaryOut,
+    TransactionImportRow,
+    TransactionImportRowResult,
+    TransactionOut,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,6 +153,37 @@ def add_transaction(
     db.commit()
     db.refresh(tx)
     return tx
+
+
+def import_transactions(
+    db: Session, provider: Provider, user: User, rows: list[TransactionImportRow]
+) -> list[TransactionImportRowResult]:
+    """Bulk CSV import (mirrors the "Exportar movimientos" template) — each
+    row goes through the exact same validation as a manual add_transaction
+    (currency match, lot availability on a sell), just looped so one bad
+    row's error doesn't block the rest of the batch. Sells always use FIFO
+    — the CSV format has no column for picking a specific lot or LIFO.
+    """
+    portfolios_by_name = {p.name.strip().casefold(): p for p in list_portfolios(db, user)}
+    results: list[TransactionImportRowResult] = []
+    for i, row in enumerate(rows):
+        portfolio = portfolios_by_name.get(row.portfolio_name.strip().casefold())
+        if portfolio is None:
+            results.append(
+                TransactionImportRowResult(row=i, status="error", message=f'Portafolio "{row.portfolio_name}" no existe.')
+            )
+            continue
+        try:
+            tx = add_transaction(db, provider, portfolio, row.yahoo_symbol, row.type, row.trade_date, row.quantity, row.price)
+            results.append(TransactionImportRowResult(row=i, status="ok", transaction=TransactionOut.model_validate(tx)))
+        except (ValueError, InsufficientQuantityError, LotAllocationError) as exc:
+            db.rollback()
+            results.append(TransactionImportRowResult(row=i, status="error", message=str(exc)))
+        except Exception:
+            db.rollback()
+            logger.warning("import_transactions: unexpected error on row %d", i, exc_info=True)
+            results.append(TransactionImportRowResult(row=i, status="error", message="Error inesperado procesando esta fila."))
+    return results
 
 
 def list_open_lots_by_symbol(db: Session, portfolio: Portfolio, yahoo_symbol: str) -> list[Transaction]:
@@ -315,13 +350,25 @@ def run_ledger(db: Session, portfolio_id: uuid.UUID) -> _LedgerResult:
     return result
 
 
-def _dividends_collected(db: Session, user: User, portfolio_id: uuid.UUID) -> tuple[float, float]:
-    """Total dividends actually paid to date, using the real share count
-    held on each ex-dividend date (reconstructed from transaction history)
-    instead of the current holding — so a position that was sold in full
-    still counts, and a recently bought one isn't credited with dividends
-    paid before it was owned.
+@dataclass
+class DividendPayment:
+    asset_id: uuid.UUID
+    event: DividendEvent
+    quantity: float  # actual shares held at the event's ex_date, not today's holding
+
+
+def dividend_payments(db: Session, portfolio_id: uuid.UUID, through: date | None = None) -> list[DividendPayment]:
+    """Every dividend event actually paid to this portfolio, using the real
+    share count held on each ex-dividend date (reconstructed from
+    transaction history) instead of the current holding — so a position
+    bought *after* an ex-date is correctly excluded from that payment (you
+    weren't a shareholder yet), a position sold in full still counts for
+    dividends paid while it was held, and a fully-zero holding at some
+    ex-date is skipped rather than backdating today's quantity onto it.
+    Shared by the "dividendos cobrados" KPI and the Movimientos "abonos"
+    feed — both need the same real history, not two different guesses.
     """
+    through = through or date.today()
     txs = list(
         db.scalars(
             select(Transaction)
@@ -333,20 +380,17 @@ def _dividends_collected(db: Session, user: User, portfolio_id: uuid.UUID) -> tu
     for t in txs:
         by_asset.setdefault(t.asset_id, []).append(t)
 
-    today = date.today()
-    total_bruto = 0.0
-    total_neto = 0.0
+    payments: list[DividendPayment] = []
     for asset_id, asset_txs in by_asset.items():
         events = list(
             db.scalars(
                 select(DividendEvent)
-                .where(DividendEvent.asset_id == asset_id, DividendEvent.ex_date <= today)
+                .where(DividendEvent.asset_id == asset_id, DividendEvent.ex_date <= through)
                 .order_by(DividendEvent.ex_date)
             )
         )
         if not events:
             continue
-        withholding = withholding_for_country(db, user, asset_txs[0].asset.country)
         qty = 0.0
         tx_idx = 0
         for event in events:
@@ -359,9 +403,24 @@ def _dividends_collected(db: Session, user: User, portfolio_id: uuid.UUID) -> tu
                 tx_idx += 1
             if qty <= 1e-9:
                 continue
-            gross = qty * float(event.amount_per_share)
-            total_bruto += gross
-            total_neto += gross * (1 - withholding)
+            payments.append(DividendPayment(asset_id=asset_id, event=event, quantity=qty))
+    return payments
+
+
+def _dividends_collected(db: Session, user: User, portfolio_id: uuid.UUID) -> tuple[float, float]:
+    """Total dividends actually paid to date — see dividend_payments()."""
+    by_asset_country: dict[uuid.UUID, float] = {}
+    total_bruto = 0.0
+    total_neto = 0.0
+    for payment in dividend_payments(db, portfolio_id):
+        withholding = by_asset_country.get(payment.asset_id)
+        if withholding is None:
+            asset = db.get(Asset, payment.asset_id)
+            withholding = withholding_for_country(db, user, asset.country)
+            by_asset_country[payment.asset_id] = withholding
+        gross = payment.quantity * float(payment.event.amount_per_share)
+        total_bruto += gross
+        total_neto += gross * (1 - withholding)
     return total_bruto, total_neto
 
 
@@ -606,7 +665,17 @@ def get_portfolio_performance(
     benchmark_dates: list[date] = []
     benchmark_closes: list[float] = []
     try:
-        history = provider.get_history(_BENCHMARK_SYMBOL, period=benchmark_period)
+        # Same benchmark history gets re-fetched from Yahoo on every
+        # performance-chart view regardless of which portfolio/user is
+        # looking — cached per (symbol, period) for a few hours so only the
+        # first view of the day pays for the live fetch.
+        cache_key = f"benchmark-history:{_BENCHMARK_SYMBOL}:{benchmark_period}"
+        cached = cache_get_json(cache_key)
+        if cached is not None:
+            history = [QuoteResult(symbol=_BENCHMARK_SYMBOL, date=date.fromisoformat(d), close=c) for d, c in cached]
+        else:
+            history = provider.get_history(_BENCHMARK_SYMBOL, period=benchmark_period)
+            cache_set_json(cache_key, [[q.date.isoformat(), q.close] for q in history], ttl_seconds=6 * 3600)
         ordered_history = sorted(history, key=lambda q: q.date)
         benchmark_dates = [q.date for q in ordered_history]
         benchmark_closes = [q.close for q in ordered_history]

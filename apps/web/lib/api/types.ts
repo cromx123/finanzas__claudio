@@ -31,6 +31,26 @@ export interface ApiTransaction {
   currency: string;
 }
 
+export interface ApiTransactionImportRow {
+  portfolio_name: string;
+  yahoo_symbol: string;
+  type: "buy" | "sell";
+  trade_date: string;
+  quantity: number;
+  price: number;
+}
+
+export interface ApiTransactionImportRowResult {
+  row: number;
+  status: "ok" | "error";
+  message: string | null;
+  transaction: ApiTransaction | null;
+}
+
+export interface ApiTransactionImportResult {
+  results: ApiTransactionImportRowResult[];
+}
+
 export interface ApiLot {
   id: string;
   trade_date: string;
@@ -105,6 +125,12 @@ export interface ApiScreenerAsset {
   return_3y: number | null;
   return_5y: number | null;
   dividend_frequency: string | null;
+  dividend_streak_years: number | null;
+}
+
+export interface ApiScreenerPage {
+  rows: ApiScreenerAsset[];
+  total: number;
 }
 
 export interface ApiAssetSearchResult {
@@ -163,6 +189,24 @@ export interface ApiGoal {
   currency: string;
   monthly_expenses: number | null;
   target_date: string | null;
+  name: string | null;
+}
+
+export interface ApiTag {
+  label: string;
+  target_weight: number | null;
+}
+
+export interface ApiCustomGoal {
+  id: string;
+  name: string;
+  target_amount: number;
+  currency: string;
+  target_date: string | null;
+  current_amount: number;
+  pct: number;
+  projected_date: string | null;
+  on_track: boolean | null;
 }
 
 export interface ApiHoldingContribution {
@@ -187,8 +231,10 @@ export interface ApiGoalsProgress {
   dividendo_anual_bruto: number;
   portfolios: ApiPortfolioContribution[];
   goals: ApiGoal[];
-  hitos_fi: { monto: number; logrado: boolean }[];
+  hitos_fi: { monto: number; logrado: boolean; projected_date: string | null }[];
   numero_fi: number;
+  numero_fi_projected_date: string | null;
+  custom_goals: ApiCustomGoal[];
 }
 
 export interface ApiCountryAllocation {
@@ -245,4 +291,57 @@ export interface ApiMovement {
   price: number;
   total: number;
   currency: string;
+}
+
+export interface ApiExportTransaction {
+  id: string;
+  yahoo_symbol: string;
+  type: string;
+  trade_date: string;
+  quantity: number | null;
+  price: number | null;
+  gross_amount: number;
+  currency: string;
+}
+
+export interface ApiExportPortfolio {
+  id: string;
+  name: string;
+  currency: string;
+  transactions: ApiExportTransaction[];
+}
+
+export interface ApiExportGoal {
+  id: string;
+  kind: string;
+  name: string | null;
+  target_amount: number;
+  currency: string;
+  monthly_expenses: number | null;
+  target_date: string | null;
+}
+
+export interface ApiExportAlert {
+  id: string;
+  yahoo_symbol: string;
+  condition: string;
+  threshold: number | null;
+  params: Record<string, number>;
+  active: boolean;
+  triggered_at: string | null;
+}
+
+export interface ApiExportHoldingTag {
+  portfolio_id: string;
+  yahoo_symbol: string;
+  tag: string;
+}
+
+export interface ApiUserDataExport {
+  exported_at: string;
+  portfolios: ApiExportPortfolio[];
+  goals: ApiExportGoal[];
+  alerts: ApiExportAlert[];
+  tags: ApiTag[];
+  holding_tags: ApiExportHoldingTag[];
 }

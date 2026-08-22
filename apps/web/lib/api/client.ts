@@ -18,7 +18,12 @@ import type {
   ApiPortfolioSummary,
   ApiPriceOnDate,
   ApiScreenerAsset,
+  ApiScreenerPage,
+  ApiTag,
   ApiTransaction,
+  ApiTransactionImportResult,
+  ApiTransactionImportRow,
+  ApiUserDataExport,
 } from "./types";
 
 // Portfolios
@@ -48,6 +53,8 @@ export const addTransaction = (
     lots?: Record<string, number>;
   }
 ) => api.post<ApiTransaction>(`/v1/portfolios/${portfolioId}/transactions`, input);
+export const importTransactions = (rows: ApiTransactionImportRow[]) =>
+  api.post<ApiTransactionImportResult>("/v1/portfolios/import-transactions", { rows });
 export const getOpenLots = (portfolioId: string, yahooSymbol: string) =>
   api.get<ApiLot[]>(`/v1/portfolios/${portfolioId}/lots?yahoo_symbol=${encodeURIComponent(yahooSymbol)}`);
 export const updateTransaction = (
@@ -72,8 +79,11 @@ export const setFxRate = (currency: string, rate_to_clp: number) =>
 export const refreshFxRates = () => api.post<Record<string, number>>("/v1/fx-rates/refresh");
 
 // Tags
-export const listTags = () => api.get<string[]>("/v1/tags");
-export const createTag = (label: string) => api.post<string[]>("/v1/tags", { label });
+export const listTags = () => api.get<ApiTag[]>("/v1/tags");
+export const createTag = (label: string) => api.post<ApiTag[]>("/v1/tags", { label });
+export const setTagTargetWeight = (label: string, targetWeight: number | null) =>
+  api.patch<ApiTag[]>(`/v1/tags/${encodeURIComponent(label)}`, { target_weight: targetWeight });
+export const deleteTag = (label: string) => api.delete<ApiTag[]>(`/v1/tags/${encodeURIComponent(label)}`);
 
 // Goals
 export const listGoals = () => api.get<ApiGoal[]>("/v1/goals");
@@ -82,8 +92,45 @@ export const upsertGoals = (
 ) => api.put<ApiGoal[]>("/v1/goals", goals);
 export const getGoalsProgress = (currency: string) => api.get<ApiGoalsProgress>(`/v1/goals/progress?currency=${currency}`);
 
+export interface CustomGoalInput {
+  name: string;
+  target_amount: number;
+  currency: string;
+  target_date?: string | null;
+}
+export const createCustomGoal = (input: CustomGoalInput) => api.post<ApiGoal>("/v1/goals/custom", input);
+export const updateCustomGoal = (id: string, input: CustomGoalInput) =>
+  api.patch<ApiGoal>(`/v1/goals/custom/${id}`, input);
+export const deleteCustomGoal = (id: string) => api.delete<void>(`/v1/goals/custom/${id}`);
+
 // Screener
-export const getScreener = () => api.get<ApiScreenerAsset[]>("/v1/screener");
+export interface ScreenerPageParams {
+  q?: string;
+  tipo?: string;
+  yieldMin?: number;
+  peMax?: number;
+  roeMin?: number;
+  sortKey?: string;
+  sortDir?: 1 | -1;
+  offset?: number;
+  limit?: number;
+}
+
+export const getScreenerPage = (params: ScreenerPageParams = {}) => {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.tipo) qs.set("tipo", params.tipo);
+  if (params.yieldMin) qs.set("yield_min", String(params.yieldMin));
+  if (params.peMax) qs.set("pe_max", String(params.peMax));
+  if (params.roeMin) qs.set("roe_min", String(params.roeMin));
+  if (params.sortKey) qs.set("sort_key", params.sortKey);
+  if (params.sortDir) qs.set("sort_dir", String(params.sortDir));
+  if (params.offset) qs.set("offset", String(params.offset));
+  if (params.limit) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  return api.get<ApiScreenerPage>(`/v1/screener${query ? `?${query}` : ""}`);
+};
+export const getScreener = () => getScreenerPage().then((page) => page.rows);
 export const addScreenerAsset = (yahooSymbol: string) => api.post<ApiScreenerAsset>("/v1/screener", { yahoo_symbol: yahooSymbol });
 export const getAssetDetail = (yahooSymbol: string) => api.get<ApiAssetDetail>(`/v1/assets/${yahooSymbol}`);
 export const searchAssets = (q: string) => api.get<ApiAssetSearchResult[]>(`/v1/assets/search?q=${encodeURIComponent(q)}`);
@@ -113,3 +160,6 @@ export const createAlert = (input: {
   params?: Record<string, number>;
 }) => api.post<ApiAlert>("/v1/alerts", input);
 export const deleteAlert = (id: string) => api.delete<void>(`/v1/alerts/${id}`);
+
+// Export (backup)
+export const getExportAll = () => api.get<ApiUserDataExport>("/v1/export/all");

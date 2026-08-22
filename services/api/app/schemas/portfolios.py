@@ -29,6 +29,19 @@ class AssetOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TransactionImportRow(BaseModel):
+    portfolio_name: str = Field(min_length=1, max_length=120)
+    yahoo_symbol: str = Field(min_length=1, max_length=32)
+    type: str = Field(pattern="^(buy|sell)$")
+    trade_date: date
+    quantity: float = Field(gt=0)
+    price: float = Field(gt=0)
+
+
+class TransactionImportIn(BaseModel):
+    rows: list[TransactionImportRow]
+
+
 class TransactionIn(BaseModel):
     yahoo_symbol: str = Field(min_length=1, max_length=32)
     type: str = Field(pattern="^(buy|sell)$")
@@ -69,6 +82,17 @@ class TransactionOut(BaseModel):
     currency: str
 
     model_config = {"from_attributes": True}
+
+
+class TransactionImportRowResult(BaseModel):
+    row: int
+    status: str
+    message: str | None = None
+    transaction: TransactionOut | None = None
+
+
+class TransactionImportResult(BaseModel):
+    results: list[TransactionImportRowResult]
 
 
 class HoldingOut(BaseModel):

@@ -45,6 +45,7 @@ export function GoalCards({
   onMetaDivChange,
   gasto,
   onGastoChange,
+  ccy,
 }: {
   goal1: GoalCardData;
   goal2: GoalCardData;
@@ -53,11 +54,24 @@ export function GoalCards({
   onMetaDivChange: (v: number) => void;
   gasto: number;
   onGastoChange: (v: number) => void;
+  ccy: string;
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      <GoalCard kicker="Objetivo 1 · Dividendo mensual" data={goal1} editableLabel="META US$/MES" editableValue={metaDiv} onEditableChange={onMetaDivChange} />
-      <GoalCard kicker="Objetivo 2 · Cobertura del costo de vida" data={goal2} editableLabel="GASTO US$/MES" editableValue={gasto} onEditableChange={onGastoChange} />
+      <GoalCard
+        kicker="Objetivo 1 · Dividendo mensual"
+        data={goal1}
+        editableLabel={`META ${ccy}/MES`}
+        editableValue={metaDiv}
+        onEditableChange={onMetaDivChange}
+      />
+      <GoalCard
+        kicker="Objetivo 2 · Cobertura del costo de vida"
+        data={goal2}
+        editableLabel={`GASTO ${ccy}/MES`}
+        editableValue={gasto}
+        onEditableChange={onGastoChange}
+      />
       <GoalCard kicker="Objetivo 3 · Próximo gran hito" data={goal3} />
     </div>
   );

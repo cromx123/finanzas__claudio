@@ -55,3 +55,29 @@ def dividend_cagr(events: list[DividendEvent], years: int) -> float | None:
     if span < 1 or start_year not in by_year or by_year[start_year] <= 0:
         return None
     return ((by_year[last_year] / by_year[start_year]) ** (1 / span) - 1) * 100
+
+
+def dividend_increase_streak_years(events: list[DividendEvent]) -> int | None:
+    """Years of consecutive dividend increases ("Dividend Aristocrat" style),
+    counted backward from the most recent *complete* calendar year (the
+    current year is excluded — it's still in progress, so comparing its
+    partial total would understate or fabricate a break). None means there
+    isn't enough history to say anything; 0 is a real answer ("last
+    complete year did not increase over the one before"), not "no data".
+    A gap in yearly data (a year with zero events) breaks the streak the
+    same as a decrease would — it can't be verified as an increase.
+    """
+    by_year: dict[int, float] = defaultdict(float)
+    for e in events:
+        by_year[e.ex_date.year] += float(e.amount_per_share)
+    by_year.pop(date.today().year, None)
+    years = sorted(by_year)
+    if len(years) < 2:
+        return None
+    streak = 0
+    for i in range(len(years) - 1, 0, -1):
+        cur_year, prev_year = years[i], years[i - 1]
+        if cur_year - prev_year != 1 or by_year[cur_year] <= by_year[prev_year]:
+            break
+        streak += 1
+    return streak

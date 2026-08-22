@@ -34,6 +34,20 @@ def test_decide_price_raises_without_any_data_at_all():
         decide_price(fetched=None, last_known=None)
 
 
+def test_decide_price_refuses_to_reuse_a_nan_last_known_close():
+    """Regression: a NaN close was found in the wild (a one-day Yahoo
+    incident before providers.yahoo._drop_nan_closes existed) stuck as the
+    "last known" price for hundreds of assets — decide_price's stale-reuse
+    path must not treat NaN as a valid fallback and re-propagate it forever.
+    """
+
+    class _NanLastKnownPrice:
+        close = float("nan")
+
+    with pytest.raises(ValueError):
+        decide_price(fetched=None, last_known=_NanLastKnownPrice())
+
+
 def test_provider_retry_recovers_from_transient_failures():
     calls = {"count": 0}
 

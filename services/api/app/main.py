@@ -5,6 +5,7 @@ from app.modules.alerts.router import router as alerts_router
 from app.modules.auth.router import router as auth_router
 from app.modules.comparador.router import router as comparador_router
 from app.modules.dividends.router import router as dividends_router
+from app.modules.export.router import router as export_router
 from app.modules.fx.router import router as fx_router
 from app.modules.goals.router import router as goals_router
 from app.modules.ingestion.router import router as ingestion_router
@@ -35,6 +36,7 @@ app.include_router(dividends_router, prefix="/v1")
 app.include_router(movements_router, prefix="/v1")
 app.include_router(alerts_router, prefix="/v1")
 app.include_router(networth_router, prefix="/v1")
+app.include_router(export_router, prefix="/v1")
 app.include_router(ingestion_router)
 
 

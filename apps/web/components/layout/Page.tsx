@@ -20,7 +20,7 @@ export function PageHeader({
         <h1 className="text-[28px] sm:text-[34px] m-0 tracking-[-0.015em] font-sans font-extrabold">{title}</h1>
       </div>
       {aside || help ? (
-        <div className="ml-auto flex items-center gap-2.5">
+        <div className="ml-auto flex items-center gap-2.5 flex-wrap justify-end">
           {aside ? <span className="text-muted text-xs">{aside}</span> : null}
           {help}
         </div>

@@ -8,6 +8,7 @@ import { PerformanceChart } from "../../components/charts/PerformanceChart";
 import { AddTransactionModal } from "../../components/panel/AddTransactionModal";
 import { DistributionPanel } from "../../components/panel/DistributionPanel";
 import { EditHoldingModal } from "../../components/panel/EditHoldingModal";
+import { FinancialHealthCard } from "../../components/panel/FinancialHealthCard";
 import { HoldingsTable, type HoldingsSortKey } from "../../components/panel/HoldingsTable";
 import { KpiGrid, type KpiCell } from "../../components/panel/KpiGrid";
 import { PortfolioFormModal } from "../../components/panel/PortfolioFormModal";
@@ -294,6 +295,8 @@ export default function PanelPage() {
           help={<PanelHelp />}
         />
 
+        <FinancialHealthCard />
+
         {!hasTransactions ? (
           <div className="border-y-2 border-divider py-16 flex flex-col items-center gap-3 text-center">
             <p className="text-muted text-sm max-w-[420px]">
@@ -327,7 +330,7 @@ export default function PanelPage() {
                       }`
                     : ""}
                 </span>
-                <div className="ml-auto flex items-center gap-2.5">
+                <div className="ml-auto flex items-center gap-2.5 flex-wrap justify-end">
                   <SegmentedControl options={RANGE_OPTIONS} value={range} onChange={setRange} size="compact" />
                   <ToggleButton active={bench} onClick={() => setBench((v) => !v)} variant="ink">
                     VS S&amp;P 500

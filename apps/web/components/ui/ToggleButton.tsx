@@ -14,7 +14,7 @@ export function ToggleButton({ active, onClick, children, variant = "accent", cl
     <button
       type="button"
       onClick={onClick}
-      className={`px-3.5 py-2 font-sans text-[11px] font-bold uppercase tracking-wide cursor-pointer border transition-colors ${
+      className={`px-3.5 py-2 font-sans text-[11px] font-bold uppercase tracking-wide cursor-pointer border transition-colors whitespace-nowrap flex-none ${
         active ? activeClasses : "bg-transparent text-ink border-divider hover:bg-ink/5"
       } ${className}`}
     >

@@ -1,10 +1,11 @@
 "use client";
 
-import { Download } from "lucide-react";
+import { Download, Upload } from "lucide-react";
 import { useMemo, useState } from "react";
 import { HelpButton } from "../../components/ui/HelpButton";
 import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
+import { ImportMovementsModal } from "../../components/movimientos/ImportMovementsModal";
 import { Button } from "../../components/ui/Button";
 import { Select } from "../../components/ui/Input";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
@@ -36,6 +37,7 @@ export default function MovimientosPage() {
   const [portfolioFilter, setPortfolioFilter] = useState<string>("all");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [exporting, setExporting] = useState<"csv" | "xlsx" | null>(null);
+  const [showImport, setShowImport] = useState(false);
 
   const filtered = useMemo(() => {
     if (!movements) return [];
@@ -58,7 +60,11 @@ export default function MovimientosPage() {
                 Ledger único con cada <b>compra</b>, <b>venta</b> y <b>abono</b> (dividendo ya pagado) de todos tus portafolios.
               </p>
               <p className="mb-2">Filtra por portafolio o tipo de movimiento con los controles de arriba.</p>
-              <p>Los botones “Exportar” descargan exactamente lo que ves filtrado, en CSV o Excel.</p>
+              <p className="mb-2">Los botones “Exportar” descargan exactamente lo que ves filtrado, en CSV o Excel.</p>
+              <p>
+                “Importar CSV” carga compras/ventas masivamente desde el mismo formato de exportación — los Abonos no
+                se importan (no son transacciones editables).
+              </p>
             </HelpButton>
           }
         />
@@ -82,6 +88,10 @@ export default function MovimientosPage() {
             <SegmentedControl options={KIND_OPTIONS} value={kindFilter} onChange={setKindFilter} size="compact" />
           </div>
           <div className="ml-auto flex gap-2">
+            <Button variant="secondary" className="text-xs" onClick={() => setShowImport(true)}>
+              <Upload size={14} strokeWidth={1.8} />
+              Importar CSV
+            </Button>
             <Button
               variant="secondary"
               className="text-xs"
@@ -121,7 +131,9 @@ export default function MovimientosPage() {
                 <tr>
                   <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Fecha</th>
                   <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Tipo</th>
-                  <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Portafolio</th>
+                  <th className="hidden sm:table-cell text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">
+                    Portafolio
+                  </th>
                   <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Activo</th>
                   <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Cantidad</th>
                   <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Precio</th>
@@ -139,7 +151,7 @@ export default function MovimientosPage() {
                           {MOVEMENT_KIND_LABEL[m.kind]}
                         </Tag>
                       </td>
-                      <td className="p-2 border-b border-divider text-[13px]">{m.portfolio_name}</td>
+                      <td className="hidden sm:table-cell p-2 border-b border-divider text-[13px]">{m.portfolio_name}</td>
                       <td className="p-2 border-b border-divider">
                         <span className="font-mono font-bold text-[12.5px]">{m.yahoo_symbol}</span>
                         <div className="text-muted text-[11.5px]">{m.asset_name}</div>
@@ -157,6 +169,7 @@ export default function MovimientosPage() {
 
         <PageFooter moduleLabel="MOVIMIENTOS" right={<>Cada fila queda en la moneda nativa del activo · no es asesoría financiera</>} />
       </PageContainer>
+      {showImport ? <ImportMovementsModal onClose={() => setShowImport(false)} /> : null}
     </>
   );
 }

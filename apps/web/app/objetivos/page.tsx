@@ -3,28 +3,37 @@
 import { useMemo, useState } from "react";
 import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
+import { CustomGoals } from "../../components/objetivos/CustomGoals";
 import { FiLadder } from "../../components/objetivos/FiLadder";
 import { GoalCards } from "../../components/objetivos/GoalCards";
 import { TagAssignPanel } from "../../components/objetivos/TagAssignPanel";
 import { TagTable } from "../../components/objetivos/TagTable";
 import { HelpButton } from "../../components/ui/HelpButton";
 import { Select } from "../../components/ui/Input";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { usePortfolioUi } from "../../context/Portfolios";
 import {
   useCreateTag,
+  useDeleteTag,
   useGoals,
   useGoalsProgress,
   usePortfolios,
   usePortfolioSummary,
   useSetHoldingTags,
+  useSetTagTargetWeight,
   useTags,
   useUpsertGoals,
 } from "../../hooks/useApi";
 import { buildFiSteps, buildGoalCards, buildTagRows } from "../../lib/calc/goals";
-import { formatUsd } from "../../lib/format";
+import { formatCurrency } from "../../lib/format";
 import type { Currency } from "../../lib/types";
 
-const DISPLAY_CCY: Currency = "USD";
+const CURRENCY_OPTIONS: { label: string; value: Currency }[] = [
+  { label: "CLP", value: "CLP" },
+  { label: "USD", value: "USD" },
+  { label: "EUR", value: "EUR" },
+  { label: "JPY", value: "JPY" },
+];
 
 export default function ObjetivosPage() {
   const { activePortfolioId, setActivePortfolioId } = usePortfolioUi();
@@ -32,13 +41,16 @@ export default function ObjetivosPage() {
   const portfolioId = portfolios?.find((p) => p.id === activePortfolioId)?.id ?? portfolios?.[0]?.id ?? null;
   const portfolio = portfolios?.find((p) => p.id === portfolioId) ?? null;
 
-  const { data: progress } = useGoalsProgress(DISPLAY_CCY);
+  const [displayCcy, setDisplayCcy] = useState<Currency>("USD");
+  const { data: progress } = useGoalsProgress(displayCcy);
   const { data: goals } = useGoals();
   const upsertGoals = useUpsertGoals();
 
   const { data: summary } = usePortfolioSummary(portfolioId);
   const { data: allTags } = useTags();
   const createTag = useCreateTag();
+  const deleteTag = useDeleteTag();
+  const setTagTargetWeight = useSetTagTargetWeight();
   const setHoldingTagsMut = useSetHoldingTags(portfolioId ?? "");
 
   const [metaDivOverride, setMetaDivOverride] = useState<number | null>(null);
@@ -50,21 +62,27 @@ export default function ObjetivosPage() {
 
   const saveGoals = (nextMeta: number, nextGasto: number) => {
     upsertGoals.mutate([
-      { kind: "monthly_dividends", target_amount: nextMeta, currency: DISPLAY_CCY },
-      { kind: "cost_coverage", target_amount: nextGasto, currency: DISPLAY_CCY, monthly_expenses: nextGasto },
+      { kind: "monthly_dividends", target_amount: nextMeta, currency: displayCcy },
+      { kind: "cost_coverage", target_amount: nextGasto, currency: displayCcy, monthly_expenses: nextGasto },
     ]);
   };
 
   const { goal1, goal2, goal3 } = useMemo(() => {
     if (!progress) return { goal1: null, goal2: null, goal3: null };
     const nextHito = progress.hitos_fi.find((h) => !h.logrado)?.monto ?? progress.numero_fi;
-    return buildGoalCards(progress.dividendo_mensual, metaDiv, gasto, progress.patrimonio_total, nextHito);
-  }, [progress, metaDiv, gasto]);
+    return buildGoalCards(progress.dividendo_mensual, metaDiv, gasto, progress.patrimonio_total, nextHito, displayCcy);
+  }, [progress, metaDiv, gasto, displayCcy]);
 
   const { steps, fiStep } = useMemo(() => {
     if (!progress) return { steps: [], fiStep: null };
-    return buildFiSteps(progress.hitos_fi, progress.patrimonio_total, progress.numero_fi);
-  }, [progress]);
+    return buildFiSteps(
+      progress.hitos_fi,
+      progress.patrimonio_total,
+      progress.numero_fi,
+      progress.numero_fi_projected_date,
+      displayCcy
+    );
+  }, [progress, displayCcy]);
 
   const tagRows = useMemo(() => {
     if (!summary || !portfolio) return [];
@@ -86,7 +104,7 @@ export default function ObjetivosPage() {
 
   return (
     <>
-      <NavBar right={<span className="text-muted text-xs">todos tus portafolios · en {DISPLAY_CCY}</span>} />
+      <NavBar right={<span className="text-muted text-xs">todos tus portafolios · en {displayCcy}</span>} />
       <PageContainer>
         <PageHeader
           kicker="MÓDULO 5 · ESTRATEGIAS Y OBJETIVOS"
@@ -94,8 +112,8 @@ export default function ObjetivosPage() {
           aside={
             progress ? (
               <>
-                patrimonio combinado: <b className="text-ink">{formatUsd(progress.patrimonio_total)}</b> · ingreso pasivo:{" "}
-                <b className="text-ink">{formatUsd(progress.dividendo_mensual, 2)}/mes</b>
+                patrimonio combinado: <b className="text-ink">{formatCurrency(progress.patrimonio_total, displayCcy)}</b> · ingreso
+                pasivo: <b className="text-ink">{formatCurrency(progress.dividendo_mensual, displayCcy, 2)}/mes</b>
               </>
             ) : undefined
           }
@@ -105,10 +123,18 @@ export default function ObjetivosPage() {
                 Metas de <b>dividendo mensual</b>, <b>cobertura de gastos</b> (independencia financiera) y los hitos FI de camino a
                 tu número mágico (25× tu gasto anual).
               </p>
+              <p>
+                Abajo, tus <b>metas propias</b> (ej. "Viaje a Europa") con su propio monto y moneda — independientes de la FI.
+              </p>
               <p>Etiquetá tus posiciones por estrategia (ej: “DGI”, “Crecimiento”) para ver el aporte de cada una a tu meta.</p>
             </HelpButton>
           }
         />
+
+        <div className="mb-8">
+          <h6 className="m-0 mb-1 text-[11px] uppercase tracking-[0.08em] font-sans font-extrabold text-neutral-600">Ver en</h6>
+          <SegmentedControl options={CURRENCY_OPTIONS} value={displayCcy} onChange={setDisplayCcy} />
+        </div>
 
         {!progress || !goal1 || !goal2 || !goal3 ? (
           <p className="text-muted text-sm py-10">Cargando…</p>
@@ -128,12 +154,15 @@ export default function ObjetivosPage() {
                 setGastoOverride(v);
                 saveGoals(metaDiv, v);
               }}
+              ccy={displayCcy}
             />
 
             <div className="mt-10">
               <h6 className="m-0 mb-3.5 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Camino a la independencia financiera</h6>
               {fiStep ? <FiLadder steps={steps} fiStep={fiStep} /> : null}
             </div>
+
+            <CustomGoals goals={progress.custom_goals} />
           </>
         )}
 
@@ -161,14 +190,19 @@ export default function ObjetivosPage() {
         ) : (
           <div className="flex flex-wrap gap-9 items-start">
             <div className="flex-[1.5_1_480px] min-w-0 overflow-x-auto">
-              <TagTable rows={tagRows} onCreateTag={(label) => createTag.mutate(label)} />
+              <TagTable
+                rows={tagRows}
+                onCreateTag={(label) => createTag.mutate(label)}
+                onDeleteTag={(label) => deleteTag.mutate(label)}
+                onSetTargetWeight={(label, targetWeight) => setTagTargetWeight.mutate({ label, targetWeight })}
+              />
             </div>
             <div className="flex-[1_1_330px] min-w-0">
               {selectedHolding ? (
                 <TagAssignPanel
                   holdings={summary.holdings}
                   ccy={portfolio.currency as Currency}
-                  tags={allTags ?? []}
+                  tags={(allTags ?? []).map((t) => t.label)}
                   selected={selectedHolding}
                   onSelect={setSelectedSymbol}
                   onToggleTag={(tag) => {

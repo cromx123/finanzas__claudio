@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
@@ -22,6 +22,7 @@ import {
 } from "../../hooks/useApi";
 import { toCategoricalSegments } from "../../lib/calc/categoricalColors";
 import { buildNetWorthPoints } from "../../lib/calc/networth";
+import { exportAllDataJson } from "../../lib/export/backup";
 import { formatCurrency, formatDateEs, formatPercent } from "../../lib/format";
 import type { Currency, RangeKey } from "../../lib/types";
 
@@ -62,6 +63,7 @@ export default function PerfilPage() {
   const [multicolor, setMulticolor] = useState(false);
   const [netWorthRange, setNetWorthRange] = useState<RangeKey>("3A");
   const [netWorthHoverIndex, setNetWorthHoverIndex] = useState<number | null>(null);
+  const [exportingBackup, setExportingBackup] = useState(false);
   const { data: progress } = useGoalsProgress(displayCcy);
   const { data: countryAllocation } = useCountryAllocation(displayCcy);
   const { data: fxDetails } = useFxRateDetails();
@@ -127,7 +129,7 @@ export default function PerfilPage() {
               <p className="text-muted text-sm py-6">Todavía no tienes portafolios — créalos desde el Panel.</p>
             ) : (
               <div>
-                <div className="flex items-center mb-3">
+                <div className="flex items-center flex-wrap gap-2 mb-3">
                   <h6 className="m-0 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Por portafolio</h6>
                   <ToggleButton active={multicolor} onClick={() => setMulticolor((v) => !v)} variant="ink" className="ml-auto">
                     Multicolor
@@ -191,7 +193,7 @@ export default function PerfilPage() {
                 <span className="text-muted text-[11.5px] font-mono">
                   {netWorthHoverPoint ? `${netWorthHoverPoint.label} · ${formatCurrency(netWorthHoverPoint.value, displayCcy)}` : ""}
                 </span>
-                <div className="ml-auto flex items-center gap-2.5">
+                <div className="ml-auto flex items-center gap-2.5 flex-wrap justify-end">
                   <SegmentedControl options={RANGE_OPTIONS} value={netWorthRange} onChange={setNetWorthRange} size="compact" />
                   <button
                     type="button"
@@ -260,6 +262,32 @@ export default function PerfilPage() {
                   );
                 })}
               </div>
+            </div>
+
+            <div className="mt-11">
+              <div className="flex items-baseline gap-3 mb-1">
+                <h6 className="m-0 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Respaldo de datos</h6>
+                <Button
+                  variant="secondary"
+                  className="text-xs ml-auto"
+                  disabled={exportingBackup}
+                  onClick={async () => {
+                    setExportingBackup(true);
+                    try {
+                      await exportAllDataJson();
+                    } finally {
+                      setExportingBackup(false);
+                    }
+                  }}
+                >
+                  <Download size={14} strokeWidth={1.8} />
+                  {exportingBackup ? "Generando…" : "Exportar todos mis datos"}
+                </Button>
+              </div>
+              <p className="text-muted text-[11.5px]">
+                Descarga un JSON con todos tus portafolios, transacciones, metas, alertas y etiquetas — un respaldo manual, útil
+                para migrar o simplemente tener tus propios datos guardados.
+              </p>
             </div>
           </>
         )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { NavBar } from "../../components/layout/NavBar";
 import { PageContainer, PageFooter, PageHeader } from "../../components/layout/Page";
 import { AddAssetForm } from "../../components/screener/AddAssetForm";
@@ -9,29 +9,32 @@ import { FilterBar } from "../../components/screener/FilterBar";
 import { ScreenerTable } from "../../components/screener/ScreenerTable";
 import { HelpButton } from "../../components/ui/HelpButton";
 import { Pagination } from "../../components/ui/Pagination";
-import { useAssetDetail, useScreener } from "../../hooks/useApi";
-import { filterScreener, sortScreener, type ScreenerFilters, type ScreenerSortKey } from "../../lib/calc/screener";
+import { useAssetDetail, useScreenerPage } from "../../hooks/useApi";
+import type { ScreenerFilters, ScreenerSortKey } from "../../lib/calc/screener";
 
 const DEFAULT_FILTERS: ScreenerFilters = { q: "", tipo: "*", yieldMin: 0, peMax: 0, roeMin: 0 };
 const PAGE_SIZE = 14;
 
 export default function ScreenerPage() {
-  const { data: universe } = useScreener();
   const [filters, setFilters] = useState<ScreenerFilters>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<ScreenerSortKey>("yield_pct");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [selected, setSelected] = useState("SCHD");
   const [page, setPage] = useState(0);
 
-  const rows = useMemo(() => {
-    if (!universe) return [];
-    return sortScreener(filterScreener(universe, filters), sortKey, sortDir);
-  }, [universe, filters, sortKey, sortDir]);
+  // The text search now hits the server per keystroke, so it needs its own
+  // debounce (unlike the old fully-client-side filter, which was instant) —
+  // same 250ms pattern as TickerAutocomplete.
+  const [debouncedQ, setDebouncedQ] = useState(filters.q);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(filters.q), 250);
+    return () => clearTimeout(t);
+  }, [filters.q]);
 
   // Reset to page 1 whenever the filters or sort change — an accepted
   // exception to "don't setState during render" (adjusting state in
   // response to a prop/state change, per React's own guidance), since doing
-  // it in an effect would cause an extra render with stale, out-of-range rows.
+  // it in an effect would cause an extra render requesting a stale page.
   const [prevFilters, setPrevFilters] = useState(filters);
   const [prevSortKey, setPrevSortKey] = useState(sortKey);
   const [prevSortDir, setPrevSortDir] = useState(sortDir);
@@ -42,14 +45,25 @@ export default function ScreenerPage() {
     setPage(0);
   }
 
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount - 1);
-  const pagedRows = rows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE);
+  const { data: screenerPage } = useScreenerPage({
+    q: debouncedQ,
+    tipo: filters.tipo,
+    yieldMin: filters.yieldMin,
+    peMax: filters.peMax,
+    roeMin: filters.roeMin,
+    sortKey,
+    sortDir,
+    offset: page * PAGE_SIZE,
+    limit: PAGE_SIZE,
+  });
 
-  const selectedSymbol = universe?.some((a) => a.yahoo_symbol === selected) ? selected : universe?.[0]?.yahoo_symbol ?? null;
-  const { data: detail } = useAssetDetail(selectedSymbol);
+  const rows = screenerPage?.rows ?? [];
+  const total = screenerPage?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  if (!universe) {
+  const { data: detail } = useAssetDetail(selected);
+
+  if (!screenerPage) {
     return (
       <>
         <NavBar />
@@ -62,7 +76,7 @@ export default function ScreenerPage() {
 
   return (
     <>
-      <NavBar right={<span className="text-muted text-xs">{rows.length} resultados</span>} />
+      <NavBar right={<span className="text-muted text-xs">{total} resultados</span>} />
       <PageContainer>
         <PageHeader
           kicker="MÓDULO 2 · SCREENER"
@@ -81,8 +95,8 @@ export default function ScreenerPage() {
         <div className="flex flex-wrap gap-8 mt-[26px] items-start">
           <div className="flex-[1.9_1_560px] min-w-0 overflow-x-auto">
             <ScreenerTable
-              rows={pagedRows}
-              selected={selectedSymbol ?? ""}
+              rows={rows}
+              selected={selected}
               onSelect={setSelected}
               sortKey={sortKey}
               sortDir={sortDir}
@@ -95,7 +109,7 @@ export default function ScreenerPage() {
               <p className="text-muted text-[11.5px]">
                 {rows.length ? "Haz clic en una fila para ver la ficha completa." : "Sin resultados con estos filtros."}
               </p>
-              <Pagination page={currentPage} pageCount={pageCount} onChange={setPage} />
+              <Pagination page={page} pageCount={pageCount} onChange={setPage} />
             </div>
           </div>
 

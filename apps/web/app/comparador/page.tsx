@@ -87,24 +87,26 @@ export default function ComparadorPage() {
         <div className="flex flex-wrap gap-9 mt-[30px] items-start">
           <div className="flex-[1_1_340px] min-w-0">
             <h6 className="m-0 mb-1.5 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Métricas lado a lado</h6>
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr>
-                  <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Métrica</th>
-                  <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">{a.yahoo_symbol}</th>
-                  <th className="text-right text-[11px] uppercase text-accent-700 p-2 border-b-2 border-divider">{b.yahoo_symbol}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {metricRows.map((m) => (
-                  <tr key={m.label}>
-                    <td className="text-muted text-xs p-2 border-b border-divider">{m.label}</td>
-                    <td className="text-right font-bold p-2 border-b border-divider">{m.a}</td>
-                    <td className="text-right font-bold p-2 border-b border-divider">{m.b}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr>
+                    <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Métrica</th>
+                    <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">{a.yahoo_symbol}</th>
+                    <th className="text-right text-[11px] uppercase text-accent-700 p-2 border-b-2 border-divider">{b.yahoo_symbol}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {metricRows.map((m) => (
+                    <tr key={m.label}>
+                      <td className="text-muted text-xs p-2 border-b border-divider">{m.label}</td>
+                      <td className="text-right font-bold p-2 border-b border-divider">{m.a}</td>
+                      <td className="text-right font-bold p-2 border-b border-divider">{m.b}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="flex-[1.6_1_460px] min-w-0">
@@ -138,37 +140,39 @@ export default function ComparadorPage() {
 
         <div className="mt-9">
           <h6 className="m-0 mb-2 text-[13px] uppercase tracking-[0.08em] font-sans font-extrabold">Resultado al año {anioFin}</h6>
-          <table className="w-full border-collapse text-[13.5px]">
-            <thead>
-              <tr>
-                <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Activo</th>
-                <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Capital final</th>
-                <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Total aportes</th>
-                <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Div. cobrados</th>
-                <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Dividendo anual</th>
-                <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Dividendo mensual</th>
-                <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">YoC final</th>
-                <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">¿Cubre costo de vida?</th>
-              </tr>
-            </thead>
-            <tbody>
-              {resultRows.map((r) => (
-                <tr key={r.ticker}>
-                  <td className="p-2 border-b border-divider">
-                    <span className="inline-block w-[9px] h-[9px] mr-2" style={{ background: r.colorVar }} />
-                    <span className="font-mono font-bold text-[12.5px]">{r.ticker}</span>
-                  </td>
-                  <td className="text-right font-bold p-2 border-b border-divider">{r.capital}</td>
-                  <td className="text-right p-2 border-b border-divider">{r.aportes}</td>
-                  <td className="text-right p-2 border-b border-divider">{r.dividendosCobrados}</td>
-                  <td className="text-right font-bold p-2 border-b border-divider">{r.dividendoAnual}</td>
-                  <td className="text-right p-2 border-b border-divider">{r.dividendoMensual}</td>
-                  <td className="text-right p-2 border-b border-divider">{r.yoc}</td>
-                  <td className={`p-2 border-b border-divider font-bold ${r.cubreNegative ? "text-accent-700" : ""}`}>{r.cubre}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[13.5px]">
+              <thead>
+                <tr>
+                  <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Activo</th>
+                  <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Capital final</th>
+                  <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Total aportes</th>
+                  <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Div. cobrados</th>
+                  <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Dividendo anual</th>
+                  <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Dividendo mensual</th>
+                  <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">YoC final</th>
+                  <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">¿Cubre costo de vida?</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {resultRows.map((r) => (
+                  <tr key={r.ticker}>
+                    <td className="p-2 border-b border-divider">
+                      <span className="inline-block w-[9px] h-[9px] mr-2" style={{ background: r.colorVar }} />
+                      <span className="font-mono font-bold text-[12.5px]">{r.ticker}</span>
+                    </td>
+                    <td className="text-right font-bold p-2 border-b border-divider">{r.capital}</td>
+                    <td className="text-right p-2 border-b border-divider">{r.aportes}</td>
+                    <td className="text-right p-2 border-b border-divider">{r.dividendosCobrados}</td>
+                    <td className="text-right font-bold p-2 border-b border-divider">{r.dividendoAnual}</td>
+                    <td className="text-right p-2 border-b border-divider">{r.dividendoMensual}</td>
+                    <td className="text-right p-2 border-b border-divider">{r.yoc}</td>
+                    <td className={`p-2 border-b border-divider font-bold ${r.cubreNegative ? "text-accent-700" : ""}`}>{r.cubre}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <p className="text-muted text-[11.5px] mt-2.5">
             Modelo mensual: el capital crece a la rentabilidad promedio anual del activo, el yield evoluciona con el CAGR del dividendo
             {params.drip ? " y los dividendos se reinvierten (DRIP activo)" : "; los dividendos se cobran sin reinvertir (DRIP inactivo)"}. El costo de

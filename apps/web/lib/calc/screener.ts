@@ -10,29 +10,7 @@ export interface ScreenerFilters {
   roeMin: 0 | 15 | 25;
 }
 
-export function filterScreener(list: ApiScreenerAsset[], f: ScreenerFilters): ApiScreenerAsset[] {
-  const q = f.q.toLowerCase();
-  return list.filter(
-    (a) =>
-      (!q || a.yahoo_symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)) &&
-      (f.tipo === "*" || a.type === f.tipo) &&
-      (!f.yieldMin || (a.yield_pct ?? 0) >= f.yieldMin) &&
-      (!f.peMax || (a.pe_ratio !== null && a.pe_ratio <= f.peMax)) &&
-      (!f.roeMin || (a.roe !== null && a.roe >= f.roeMin))
-  );
-}
-
 export type ScreenerSortKey = "yield_pct" | "cagr_div_5y" | "pe_ratio" | "roe";
-
-export function sortScreener(list: ApiScreenerAsset[], key: ScreenerSortKey, dir: 1 | -1): ApiScreenerAsset[] {
-  return [...list].sort((x, y) => {
-    const a = x[key];
-    const b = y[key];
-    if (a === null || a === undefined) return 1;
-    if (b === null || b === undefined) return -1;
-    return dir * (a - b);
-  });
-}
 
 export function formatAssetPrice(a: ApiScreenerAsset): string {
   if (a.price === null) return "—";
@@ -59,6 +37,10 @@ export function buildDetailCells(a: ApiScreenerAsset): DetailCell[] {
     { key: "Yield", value: nn(a.yield_pct) },
     { key: "CAGR div 3A", value: a.cagr_div_3y === null ? "—" : formatPercent(a.cagr_div_3y, true) },
     { key: "CAGR div 5A", value: a.cagr_div_5y === null ? "—" : formatPercent(a.cagr_div_5y, true) },
+    {
+      key: "Racha de alzas",
+      value: a.dividend_streak_years === null ? "—" : `${a.dividend_streak_years} año${a.dividend_streak_years === 1 ? "" : "s"}`,
+    },
     { key: "P/E", value: a.pe_ratio === null ? "—" : formatDecimal(a.pe_ratio, 1) },
     { key: "Payout", value: nn(a.payout_ratio) },
     { key: "ROE", value: nn(a.roe) },

@@ -547,6 +547,44 @@ def test_performance_starts_at_earliest_purchase_and_includes_benchmark(client, 
     assert body["points"][0]["benchmark_index"] is not None
 
 
+def test_performance_benchmark_history_is_cached(client, monkeypatch):
+    """The ^GSPC benchmark fetch in get_portfolio_performance is now cached
+    per (symbol, period) in Redis — every portfolio's performance view for
+    the same range shares one Yahoo fetch instead of re-fetching per
+    request. Clears the specific key first since Redis persists across
+    test runs, unlike the DB.
+    """
+    from app.core.cache import _client as redis_client
+
+    redis_client.delete("benchmark-history:^GSPC:1y")
+    call_count = {"n": 0}
+
+    class CountingProvider(FakeProvider):
+        def get_history(self, symbol: str, period: str = "3y") -> list[QuoteResult]:
+            if symbol == "^GSPC":
+                call_count["n"] += 1
+            return super().get_history(symbol, period)
+
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", CountingProvider)
+    token = _register_and_login(client)
+
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "USA", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+    purchase_date = (date.today() - timedelta(days=200)).isoformat()
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "AAPL", "type": "buy", "trade_date": purchase_date, "quantity": 10, "price": 150.0},
+        headers=_auth(token),
+    )
+
+    resp1 = client.get(f"/v1/portfolios/{portfolio_id}/performance?range=1A", headers=_auth(token))
+    resp2 = client.get(f"/v1/portfolios/{portfolio_id}/performance?range=1A", headers=_auth(token))
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert call_count["n"] == 1
+
+
 def test_performance_short_range_samples_daily(client, monkeypatch):
     monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
     token = _register_and_login(client)
@@ -635,11 +673,79 @@ def test_dividends_collected_uses_share_count_held_on_ex_date(client, db_session
     assert summary["dividendos_cobrados_neto"] == summary["dividendos_cobrados_bruto"]
 
 
+def test_import_transactions_reports_per_row_results(client, monkeypatch):
+    """A CSV-import batch never all-or-nothings: one row resolving to an
+    unknown portfolio name and another oversell must not stop the good rows
+    from committing, and each row's own outcome comes back so the UI can
+    show which ones failed and why.
+    """
+    monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
+    token = _register_and_login(client)
+
+    portfolio_id = client.post(
+        "/v1/portfolios", json={"name": "Mi Cartera", "currency": "USD"}, headers=_auth(token)
+    ).json()["id"]
+
+    resp = client.post(
+        "/v1/portfolios/import-transactions",
+        json={
+            "rows": [
+                {
+                    "portfolio_name": "Mi Cartera",
+                    "yahoo_symbol": "AAPL",
+                    "type": "buy",
+                    "trade_date": "2026-01-10",
+                    "quantity": 10,
+                    "price": 150.0,
+                },
+                {
+                    "portfolio_name": "No Existe",
+                    "yahoo_symbol": "AAPL",
+                    "type": "buy",
+                    "trade_date": "2026-01-10",
+                    "quantity": 5,
+                    "price": 150.0,
+                },
+                {
+                    "portfolio_name": "Mi Cartera",
+                    "yahoo_symbol": "AAPL",
+                    "type": "sell",
+                    "trade_date": "2026-01-11",
+                    "quantity": 999,
+                    "price": 160.0,
+                },
+            ]
+        },
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 3
+
+    assert results[0]["status"] == "ok"
+    assert results[0]["transaction"]["asset"]["yahoo_symbol"] == "AAPL"
+    assert results[0]["transaction"]["quantity"] == 10
+
+    assert results[1]["status"] == "error"
+    assert "No Existe" in results[1]["message"]
+
+    assert results[2]["status"] == "error"
+
+    # The good row (index 0) really committed despite the other two failing.
+    txns = client.get(f"/v1/portfolios/{portfolio_id}/transactions", headers=_auth(token)).json()
+    assert len(txns) == 1
+    assert txns[0]["quantity"] == 10
+
+
 def test_tags_crud(client):
     token = _register_and_login(client)
     resp = client.post("/v1/tags", json={"label": "DGI"}, headers=_auth(token))
     assert resp.status_code == 201
-    assert "DGI" in resp.json()
+    assert resp.json() == [{"label": "DGI", "target_weight": None}]
 
     resp = client.get("/v1/tags", headers=_auth(token))
-    assert resp.json() == ["DGI"]
+    assert resp.json() == [{"label": "DGI", "target_weight": None}]
+
+    resp = client.patch("/v1/tags/DGI", json={"target_weight": 25.5}, headers=_auth(token))
+    assert resp.status_code == 200
+    assert resp.json() == [{"label": "DGI", "target_weight": 25.5}]

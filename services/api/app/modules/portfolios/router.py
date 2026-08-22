@@ -19,6 +19,8 @@ from app.schemas.portfolios import (
     PortfolioOut,
     PortfolioPerformanceOut,
     PortfolioSummaryOut,
+    TransactionImportIn,
+    TransactionImportResult,
     TransactionIn,
     TransactionOut,
     TransactionUpdateIn,
@@ -57,6 +59,21 @@ def get_country_allocation(
     db: Session = Depends(get_db),
 ) -> CountryAllocationOut:
     return service.compute_country_allocation(db, user, currency.upper())
+
+
+@router.post("/import-transactions", response_model=TransactionImportResult)
+def import_transactions(
+    payload: TransactionImportIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TransactionImportResult:
+    """Bulk CSV import — registered ahead of /{portfolio_id} so this path
+    isn't captured as a portfolio id. Each row resolves its own portfolio by
+    name, so one payload can span multiple portfolios at once.
+    """
+    provider = YahooProvider()
+    results = service.import_transactions(db, provider, user, payload.rows)
+    return TransactionImportResult(results=results)
 
 
 @router.patch("/{portfolio_id}", response_model=PortfolioOut)

@@ -35,10 +35,11 @@ export function FiLadder({ steps, fiStep }: { steps: FiStep[]; fiStep: FiStep })
           <div className={`flex-1 h-0.5 mt-2.5 ${LINE_CLASSES[s.status]}`} />
         </div>
       ))}
-      <div className="flex flex-col items-center gap-1.5 flex-none w-24">
+      <div className="flex flex-col items-center gap-1.5 flex-none w-28">
         <StepCircle status={fiStep.status} />
         <b className="text-xs whitespace-nowrap">{fiStep.valueLabel}</b>
         <span className="text-muted text-[10px] text-center">Independencia financiera (regla del 4%)</span>
+        <span className="text-muted text-[10px] text-center">{fiStep.statusLabel}</span>
       </div>
     </div>
   );

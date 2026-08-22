@@ -17,7 +17,7 @@ class FakeProvider(Provider):
         return []
 
     def get_fundamentals(self, symbol: str) -> dict:
-        return {"longName": f"{symbol} Inc.", "sector": "Technology", "quoteType": "EQUITY"}
+        return {"longName": f"{symbol} Inc.", "sector": "Financial Services", "quoteType": "EQUITY"}
 
     def get_dividends(self, symbol: str) -> list[dict]:
         return []
@@ -30,7 +30,7 @@ class FakeProvider(Provider):
 
 
 def _register_and_login(client) -> str:
-    resp = client.post("/v1/auth/register", json={"email": "movements-test@example.com", "password": "SuperSecret123!"})
+    resp = client.post("/v1/auth/register", json={"email": "dividends-test@example.com", "password": "SuperSecret123!"})
     assert resp.status_code == 201
     return resp.json()["access_token"]
 
@@ -39,21 +39,19 @@ def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_movements_combine_buy_sell_and_paid_dividends(client, db_session, monkeypatch):
+def test_calendar_paid_event_is_not_inflated_by_shares_bought_afterward(client, db_session, monkeypatch):
+    """CHILE.SN pays once a year. Buy 100 shares, collect that year's
+    dividend, then buy 100 more — the already-paid event must still show
+    100 shares (what you actually held on the ex_date), not 200.
+    """
     monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
     token = _register_and_login(client)
-
     portfolio_id = client.post(
         "/v1/portfolios", json={"name": "Dividendos Chile", "currency": "CLP"}, headers=_auth(token)
     ).json()["id"]
     client.post(
         f"/v1/portfolios/{portfolio_id}/transactions",
         json={"yahoo_symbol": "CHILE.SN", "type": "buy", "trade_date": "2026-01-15", "quantity": 100, "price": 90.0},
-        headers=_auth(token),
-    )
-    client.post(
-        f"/v1/portfolios/{portfolio_id}/transactions",
-        json={"yahoo_symbol": "CHILE.SN", "type": "sell", "trade_date": "2026-02-15", "quantity": 20, "price": 95.0},
         headers=_auth(token),
     )
 
@@ -65,70 +63,63 @@ def test_movements_combine_buy_sell_and_paid_dividends(client, db_session, monke
             amount_per_share=2.0,
             currency="CLP",
             status=DividendStatus.DECLARED,
-            frequency=DividendFrequency.QUARTERLY,
+            frequency=DividendFrequency.ANNUAL,
         )
     )
     db_session.commit()
 
-    resp = client.get("/v1/movements", headers=_auth(token))
+    # Bought after the dividend was already paid.
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "CHILE.SN", "type": "buy", "trade_date": "2026-06-01", "quantity": 100, "price": 95.0},
+        headers=_auth(token),
+    )
+
+    resp = client.get(f"/v1/dividends/calendar?portfolio_id={portfolio_id}&year=2026", headers=_auth(token))
     assert resp.status_code == 200
-    rows = resp.json()
-    kinds = sorted(r["kind"] for r in rows)
-    assert kinds == ["buy", "dividend", "sell"]
-
-    # newest first
-    dates = [r["date"] for r in rows]
-    assert dates == sorted(dates, reverse=True)
-
-    dividend_row = next(r for r in rows if r["kind"] == "dividend")
-    assert dividend_row["yahoo_symbol"] == "CHILE.SN"
-    # 80 = actual shares held on the ex_date (100 bought - 20 sold, both
-    # before 2026-03-01) — happens to match the current holding here only
-    # because nothing changed after the dividend.
-    assert dividend_row["quantity"] == 80
-    assert dividend_row["total"] == 80 * 2.0
+    events = resp.json()["events"]
+    paid = [e for e in events if e["estado"] == "Pagado"]
+    assert len(paid) == 1
+    assert paid[0]["quantity"] == 100  # not 200
+    assert paid[0]["total_bruto"] == 100 * 2.0
 
 
-def test_movements_excludes_dividends_paid_before_the_first_purchase(client, db_session, monkeypatch):
+def test_calendar_future_estimate_uses_current_holding(client, db_session, monkeypatch):
+    """The projected/estimated future event, unlike the paid one, should
+    reflect the current (larger) holding — that's the best forward guess."""
     monkeypatch.setattr("app.modules.portfolios.router.YahooProvider", FakeProvider)
     token = _register_and_login(client)
-
     portfolio_id = client.post(
         "/v1/portfolios", json={"name": "Dividendos Chile", "currency": "CLP"}, headers=_auth(token)
     ).json()["id"]
     client.post(
         f"/v1/portfolios/{portfolio_id}/transactions",
-        json={"yahoo_symbol": "CHILE.SN", "type": "buy", "trade_date": "2026-03-15", "quantity": 100, "price": 90.0},
+        json={"yahoo_symbol": "CHILE.SN", "type": "buy", "trade_date": "2025-01-15", "quantity": 100, "price": 90.0},
         headers=_auth(token),
     )
 
     asset = db_session.scalar(select(Asset).where(Asset.yahoo_symbol == "CHILE.SN"))
-    # Paid before the purchase: never actually collected, must not appear.
     db_session.add(
         DividendEvent(
             asset_id=asset.id,
-            ex_date=date(2026, 1, 1),
+            ex_date=date(2025, 3, 1),
             amount_per_share=2.0,
             currency="CLP",
             status=DividendStatus.DECLARED,
-            frequency=DividendFrequency.QUARTERLY,
-        )
-    )
-    # Paid after the purchase: this one was actually collected.
-    db_session.add(
-        DividendEvent(
-            asset_id=asset.id,
-            ex_date=date(2026, 4, 1),
-            amount_per_share=2.0,
-            currency="CLP",
-            status=DividendStatus.DECLARED,
-            frequency=DividendFrequency.QUARTERLY,
+            frequency=DividendFrequency.ANNUAL,
         )
     )
     db_session.commit()
+    client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        json={"yahoo_symbol": "CHILE.SN", "type": "buy", "trade_date": "2025-06-01", "quantity": 100, "price": 95.0},
+        headers=_auth(token),
+    )
 
-    resp = client.get("/v1/movements", headers=_auth(token))
+    # Ask for next year's calendar: the only event is the ~annual projection.
+    resp = client.get(f"/v1/dividends/calendar?portfolio_id={portfolio_id}&year=2026", headers=_auth(token))
     assert resp.status_code == 200
-    dividend_rows = [r for r in resp.json() if r["kind"] == "dividend"]
-    assert len(dividend_rows) == 1
-    assert dividend_rows[0]["date"] == "2026-04-01"
+    events = resp.json()["events"]
+    assert len(events) == 1
+    assert events[0]["estado"] == "Estimado"
+    assert events[0]["quantity"] == 200  # current holding, both buys

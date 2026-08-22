@@ -12,7 +12,7 @@ import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { Tag } from "../../components/ui/Tag";
 import { usePortfolioUi } from "../../context/Portfolios";
-import { useDividendCalendar, usePortfolios } from "../../hooks/useApi";
+import { useDividendCalendar, usePortfolioSummary, usePortfolios } from "../../hooks/useApi";
 import {
   bestMonthIndex,
   buildCalendarCells,
@@ -23,7 +23,7 @@ import {
   mapApiEvents,
   monthlyTotals,
 } from "../../lib/calc/dividends";
-import { formatCurrency, formatNumber, formatPercent } from "../../lib/format";
+import { formatCurrency, formatNumber } from "../../lib/format";
 import type { Currency, DividendStatus } from "../../lib/types";
 
 const FILTER_OPTIONS: { label: string; value: DividendStatus | "*" }[] = [
@@ -40,6 +40,7 @@ export default function DividendosPage() {
   const portfolio = portfolios?.find((p) => p.id === portfolioId) ?? null;
 
   const { data: calendar } = useDividendCalendar(portfolioId, CURRENT_YEAR);
+  const { data: summary } = usePortfolioSummary(portfolioId);
   const [filtro, setFiltro] = useState<DividendStatus | "*">("*");
 
   const derived = useMemo(() => {
@@ -127,10 +128,29 @@ export default function DividendosPage() {
           }
         />
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-y divide-divider border-y-2 border-divider">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y divide-divider border-y-2 border-divider">
           <div className="px-[18px] py-4">
-            <h6 className="m-0 mb-1 text-[11px] uppercase tracking-[0.08em] font-sans font-extrabold text-neutral-600">Total del año</h6>
-            <div className="font-sans font-extrabold text-[23px]">{formatCurrency(derived.totalY, ccy)}</div>
+            <h6 className="m-0 mb-1 text-[11px] uppercase tracking-[0.08em] font-sans font-extrabold text-neutral-600">
+              Dividendos pagados
+            </h6>
+            <div className="font-sans font-extrabold text-[23px]">{formatCurrency(derived.pagadoSum, ccy)}</div>
+            <div className="text-muted text-[11px] mt-0.5">en {CURRENT_YEAR}</div>
+          </div>
+          <div className="px-[18px] py-4">
+            <h6 className="m-0 mb-1 text-[11px] uppercase tracking-[0.08em] font-sans font-extrabold text-neutral-600">
+              Dividendos estimados
+            </h6>
+            <div className="font-sans font-extrabold text-[23px]">{formatCurrency(derived.totalY - derived.pagadoSum, ccy)}</div>
+            <div className="text-muted text-[11px] mt-0.5">resto de {CURRENT_YEAR}</div>
+          </div>
+          <div className="px-[18px] py-4">
+            <h6 className="m-0 mb-1 text-[11px] uppercase tracking-[0.08em] font-sans font-extrabold text-neutral-600">
+              Total recibido
+            </h6>
+            <div className="font-sans font-extrabold text-[23px]">
+              {summary ? formatCurrency(netoRetencion ? summary.dividendos_cobrados_neto : summary.dividendos_cobrados_bruto, ccy) : "—"}
+            </div>
+            <div className="text-muted text-[11px] mt-0.5">histórico, todos los años</div>
           </div>
           <div className="px-[18px] py-4">
             <h6 className="m-0 mb-1 text-[11px] uppercase tracking-[0.08em] font-sans font-extrabold text-neutral-600">Promedio mensual</h6>
@@ -144,11 +164,6 @@ export default function DividendosPage() {
           <div className="px-[18px] py-4">
             <h6 className="m-0 mb-1 text-[11px] uppercase tracking-[0.08em] font-sans font-extrabold text-neutral-600">Pagos en el año</h6>
             <div className="font-sans font-extrabold text-[23px]">{formatNumber(derived.events.length)}</div>
-          </div>
-          <div className="px-[18px] py-4">
-            <h6 className="m-0 mb-1 text-[11px] uppercase tracking-[0.08em] font-sans font-extrabold text-neutral-600">Pagado</h6>
-            <div className="font-sans font-extrabold text-[23px]">{derived.totalY > 0 ? formatPercent((derived.pagadoSum / derived.totalY) * 100) : "—"}</div>
-            <div className="text-muted text-[11px] mt-0.5">del total anual</div>
           </div>
         </div>
 
@@ -191,37 +206,39 @@ export default function DividendosPage() {
                   {derived.detailRows.length} de {derived.events.length} pagos
                 </span>
               </div>
-              <table className="w-full border-collapse text-[13px]">
-                <thead>
-                  <tr>
-                    <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Empresa</th>
-                    <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Fecha</th>
-                    <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Monto/acción</th>
-                    <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Cantidad</th>
-                    <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Total</th>
-                    <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {derived.detailRows.map((r, i) => (
-                    <tr key={`${r.ticker}-${i}`}>
-                      <td className="p-2 border-b border-divider">
-                        <span className="font-mono font-bold text-xs">{r.ticker}</span>
-                        <div className="text-muted text-[11px]">{r.nombre}</div>
-                      </td>
-                      <td className="p-2 border-b border-divider whitespace-nowrap">{r.fecha}</td>
-                      <td className="p-2 border-b border-divider text-right">{r.montoLabel}</td>
-                      <td className="p-2 border-b border-divider text-right">{r.cantidadLabel}</td>
-                      <td className="p-2 border-b border-divider text-right font-bold">{r.totalLabel}</td>
-                      <td className="p-2 border-b border-divider">
-                        <Tag variant={r.estado === "Pagado" ? "neutral" : "outline"} className="text-[9.5px] px-1.5">
-                          {r.estado}
-                        </Tag>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-[13px]">
+                  <thead>
+                    <tr>
+                      <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Empresa</th>
+                      <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Fecha</th>
+                      <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Monto/acción</th>
+                      <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Cantidad</th>
+                      <th className="text-right text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Total</th>
+                      <th className="text-left text-[11px] uppercase text-ink/60 p-2 border-b-2 border-divider">Estado</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {derived.detailRows.map((r, i) => (
+                      <tr key={`${r.ticker}-${i}`}>
+                        <td className="p-2 border-b border-divider">
+                          <span className="font-mono font-bold text-xs">{r.ticker}</span>
+                          <div className="text-muted text-[11px]">{r.nombre}</div>
+                        </td>
+                        <td className="p-2 border-b border-divider whitespace-nowrap">{r.fecha}</td>
+                        <td className="p-2 border-b border-divider text-right">{r.montoLabel}</td>
+                        <td className="p-2 border-b border-divider text-right">{r.cantidadLabel}</td>
+                        <td className="p-2 border-b border-divider text-right font-bold">{r.totalLabel}</td>
+                        <td className="p-2 border-b border-divider">
+                          <Tag variant={r.estado === "Pagado" ? "neutral" : "outline"} className="text-[9.5px] px-1.5">
+                            {r.estado}
+                          </Tag>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}

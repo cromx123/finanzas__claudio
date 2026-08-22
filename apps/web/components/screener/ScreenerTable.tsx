@@ -32,7 +32,9 @@ export function ScreenerTable({ rows, selected, onSelect, sortKey, sortDir, onSo
       <thead>
         <tr>
           <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Activo</th>
-          <th className="text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Tipo</th>
+          <th className="hidden sm:table-cell text-left text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">
+            Tipo
+          </th>
           <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">Precio</th>
           {COLUMNS.map((c) => (
             <th
@@ -44,9 +46,15 @@ export function ScreenerTable({ rows, selected, onSelect, sortKey, sortDir, onSo
               <SortArrow active={sortKey === c.key} dir={sortDir} />
             </th>
           ))}
-          <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">M. neta</th>
-          <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">ER</th>
-          <th className="text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">AUM/Cap.</th>
+          <th className="hidden sm:table-cell text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">
+            M. neta
+          </th>
+          <th className="hidden sm:table-cell text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">
+            ER
+          </th>
+          <th className="hidden sm:table-cell text-right text-[11px] tracking-[0.08em] uppercase text-ink/60 p-2 border-b-2 border-divider">
+            AUM/Cap.
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -63,7 +71,7 @@ export function ScreenerTable({ rows, selected, onSelect, sortKey, sortDir, onSo
                 {a.name} · {a.country}
               </div>
             </td>
-            <td className="p-2 border-b border-divider">
+            <td className="hidden sm:table-cell p-2 border-b border-divider">
               <Tag variant="neutral" className="text-[9.5px] px-1.5">
                 {a.type}
               </Tag>
@@ -75,9 +83,13 @@ export function ScreenerTable({ rows, selected, onSelect, sortKey, sortDir, onSo
             </td>
             <td className="p-2 border-b border-divider text-right">{a.pe_ratio === null ? "—" : formatDecimal(a.pe_ratio, 1)}</td>
             <td className="p-2 border-b border-divider text-right">{a.roe === null ? "—" : formatPercent(a.roe)}</td>
-            <td className="p-2 border-b border-divider text-right">{a.net_margin === null ? "—" : formatPercent(a.net_margin)}</td>
-            <td className="p-2 border-b border-divider text-right">{a.expense_ratio === null ? "—" : formatPercent(a.expense_ratio)}</td>
-            <td className="p-2 border-b border-divider text-right">{formatAumOrCap(a.aum_or_cap)}</td>
+            <td className="hidden sm:table-cell p-2 border-b border-divider text-right">
+              {a.net_margin === null ? "—" : formatPercent(a.net_margin)}
+            </td>
+            <td className="hidden sm:table-cell p-2 border-b border-divider text-right">
+              {a.expense_ratio === null ? "—" : formatPercent(a.expense_ratio)}
+            </td>
+            <td className="hidden sm:table-cell p-2 border-b border-divider text-right">{formatAumOrCap(a.aum_or_cap)}</td>
           </tr>
         ))}
       </tbody>

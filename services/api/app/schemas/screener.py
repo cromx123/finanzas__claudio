@@ -32,6 +32,12 @@ class ScreenerAssetOut(BaseModel):
     return_3y: float | None
     return_5y: float | None
     dividend_frequency: str | None
+    dividend_streak_years: int | None
+
+
+class ScreenerPageOut(BaseModel):
+    rows: list[ScreenerAssetOut]
+    total: int
 
 
 class DividendHistoryPoint(BaseModel):

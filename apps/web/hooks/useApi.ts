@@ -88,6 +88,21 @@ export function useOpenLots(portfolioId: string | null, yahooSymbol: string | nu
   });
 }
 
+const IMPORT_AFFECTED_QUERY_KEYS = ["portfolios", "movements", "portfolio-summary", "transactions", "portfolio-performance", "lots"];
+
+export function useImportTransactions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: client.importTransactions,
+    // A bulk import can span multiple portfolios by name, not just one
+    // known portfolioId — invalidate every query family it could have
+    // touched instead of a single useInvalidatePortfolio(portfolioId).
+    onSuccess: () => {
+      qc.invalidateQueries({ predicate: (q) => IMPORT_AFFECTED_QUERY_KEYS.includes(q.queryKey[0] as string) });
+    },
+  });
+}
+
 export function useAddTransaction(portfolioId: string) {
   const invalidate = useInvalidatePortfolio(portfolioId);
   return useMutation({
@@ -178,6 +193,23 @@ export function useCreateTag() {
   });
 }
 
+export function useDeleteTag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: client.deleteTag,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tags"] }),
+  });
+}
+
+export function useSetTagTargetWeight() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ label, targetWeight }: { label: string; targetWeight: number | null }) =>
+      client.setTagTargetWeight(label, targetWeight),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tags"] }),
+  });
+}
+
 // Goals
 export function useGoals() {
   return useQuery({ queryKey: ["goals"], queryFn: client.listGoals, ...staticQuery });
@@ -202,16 +234,54 @@ export function useGoalsProgress(currency: string) {
   });
 }
 
+function useInvalidateGoals() {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: ["goals"] });
+    qc.invalidateQueries({ queryKey: ["goals-progress"] });
+  };
+}
+
+export function useCreateCustomGoal() {
+  const invalidate = useInvalidateGoals();
+  return useMutation({ mutationFn: client.createCustomGoal, onSuccess: invalidate });
+}
+
+export function useUpdateCustomGoal() {
+  const invalidate = useInvalidateGoals();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: client.CustomGoalInput }) => client.updateCustomGoal(id, input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteCustomGoal() {
+  const invalidate = useInvalidateGoals();
+  return useMutation({ mutationFn: client.deleteCustomGoal, onSuccess: invalidate });
+}
+
 // Screener
 export function useScreener() {
   return useQuery({ queryKey: ["screener"], queryFn: client.getScreener, staleTime: 5 * 60_000 });
+}
+
+export function useScreenerPage(params: client.ScreenerPageParams) {
+  return useQuery({
+    queryKey: ["screener-page", params],
+    queryFn: () => client.getScreenerPage(params),
+    staleTime: 60_000,
+    placeholderData: (previous) => previous,
+  });
 }
 
 export function useAddScreenerAsset() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: client.addScreenerAsset,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["screener"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["screener"] });
+      qc.invalidateQueries({ queryKey: ["screener-page"] });
+    },
   });
 }
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import date
 
@@ -23,10 +24,17 @@ def decide_price(fetched: QuoteResult | None, last_known: Price | None) -> Price
     provider has no fresh close for today — a common gap on illiquid .SN
     tickers — reuse the last known close and flag it `is_stale` instead of
     leaving a hole in the series.
+
+    A NaN `last_known.close` is treated the same as no prior close at all —
+    real bad data was found in the wild once (a one-day Yahoo incident before
+    providers.yahoo._drop_nan_closes existed, affecting ~355 assets' most
+    recent row): without this check, a stuck NaN would get silently reused
+    and re-stamped `is_stale` forever instead of ever raising and getting
+    noticed.
     """
     if fetched is not None:
         return PriceDecision(close=fetched.close, volume=fetched.volume, is_stale=False)
-    if last_known is not None:
+    if last_known is not None and not math.isnan(float(last_known.close)):
         return PriceDecision(close=float(last_known.close), volume=None, is_stale=True)
     raise ValueError("no fetched price and no prior close to fall back to")
 

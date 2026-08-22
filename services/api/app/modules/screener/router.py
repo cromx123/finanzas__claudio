@@ -10,14 +10,39 @@ from app.models.user import User
 from app.modules.auth.router import get_current_user
 from app.modules.ingestion.providers.yahoo import YahooProvider
 from app.modules.screener import service
-from app.schemas.screener import AssetDetailOut, AssetIngestIn, AssetSearchResultOut, PriceOnDateOut, ScreenerAssetOut
+from app.schemas.screener import (
+    AssetDetailOut,
+    AssetIngestIn,
+    AssetSearchResultOut,
+    PriceOnDateOut,
+    ScreenerAssetOut,
+    ScreenerPageOut,
+)
 
 router = APIRouter(tags=["screener"])
 
 
-@router.get("/screener", response_model=list[ScreenerAssetOut])
-def list_screener(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ScreenerAssetOut]:
-    return service.list_screener(db)
+@router.get("/screener", response_model=ScreenerPageOut)
+def list_screener(
+    q: str = Query(default=""),
+    tipo: str = Query(default="*", pattern=r"^(\*|stock|etf|reit)$"),
+    yield_min: float = Query(default=0, ge=0),
+    pe_max: float = Query(default=0, ge=0),
+    roe_min: float = Query(default=0, ge=0),
+    sort_key: str = Query(default="yield_pct", pattern=r"^(yield_pct|cagr_div_5y|pe_ratio|roe)$"),
+    sort_dir: int = Query(default=-1, ge=-1, le=1),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10_000, ge=1, le=10_000),
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ScreenerPageOut:
+    """Defaults return the whole universe (used by the ticker-autocomplete
+    lookup, which needs everything for instant local prefix matching); the
+    Screener page passes explicit filter/sort/offset/limit for true
+    server-side pagination — see MEJORAS.md.
+    """
+    rows, total = service.list_screener(db, q, tipo, yield_min, pe_max, roe_min, sort_key, sort_dir, offset, limit)
+    return ScreenerPageOut(rows=rows, total=total)
 
 
 @router.post("/screener", response_model=ScreenerAssetOut, status_code=status.HTTP_201_CREATED)
